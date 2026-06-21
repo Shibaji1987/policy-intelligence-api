@@ -1,8 +1,8 @@
 package com.acme.policyintelligence.retrieval.api;
 
-import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
 import com.acme.policyintelligence.retrieval.application.RetrievalSearchResponse;
 import com.acme.policyintelligence.retrieval.application.RetrievalSearchService;
+import com.acme.policyintelligence.security.RetrievalAccessPolicy;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -13,9 +13,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class RetrievalController {
 
     private final RetrievalSearchService retrievalSearchService;
+    private final RetrievalAccessPolicy accessPolicy;
 
-    public RetrievalController(RetrievalSearchService retrievalSearchService) {
+    public RetrievalController(RetrievalSearchService retrievalSearchService, RetrievalAccessPolicy accessPolicy) {
         this.retrievalSearchService = retrievalSearchService;
+        this.accessPolicy = accessPolicy;
     }
 
     @GetMapping("/search")
@@ -31,7 +33,7 @@ public class RetrievalController {
         return retrievalSearchService.search(
                 query,
                 topK,
-                new RetrievalFilters(tenantId, department, region, documentType, classification)
+                accessPolicy.filters(tenantId, department, region, documentType, classification)
         );
     }
 }

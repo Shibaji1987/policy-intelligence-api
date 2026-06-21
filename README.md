@@ -86,15 +86,17 @@ enterprise knowledge platform:
   classification
 - multi-query advisor retrieval, parent-child neighbor expansion, and
   deterministic reranking before context selection
+- request governance from `X-Tenant-Id`, `X-User-Id`, and optional allowed
+  metadata headers
 - context filtering before LLM calls, including deduplication, document diversity,
   token budget, and final chunk capping
-- answer verification checks before trace completion
+- answer verification with unsupported-claim heuristics before trace completion
 - LLM final answer generation from retrieved source chunks
 - source attribution for auditability
 - retrieval trace storage with retrieved/used/discarded source details and latency
   metrics
 - human feedback collection on retrieval traces
-- starter golden-question evaluation endpoint
+- golden-question evaluation runner
 - ML service integration for retrieval-quality prediction
 - Dockerized API, UI, ML, and database
 - local secrets kept out of Git
@@ -200,6 +202,7 @@ Full advisor flow with LLM answer generation:
 
 ```text
 POST /api/v1/advisor
+GET  /api/v1/advisor/stream?question=...
 ```
 
 ML health through API:
@@ -220,6 +223,24 @@ Golden-question evaluation starter:
 
 ```text
 GET /api/v1/evaluations/golden-questions
+POST /api/v1/evaluations/run-golden-questions
+```
+
+Governance headers for local/dev testing:
+
+```text
+X-User-Id: demo-user
+X-Tenant-Id: default
+X-Allowed-Departments: Security,Compliance
+X-Allowed-Regions: Global,Canada
+X-Allowed-Classifications: Internal,Restricted
+```
+
+By default, header scopes are advisory so the local demo remains frictionless.
+Set this to enforce allowed metadata scopes:
+
+```text
+SECURITY_ENFORCE_HEADER_SCOPES=true
 ```
 
 Embedding operations:

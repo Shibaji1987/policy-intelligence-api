@@ -9,6 +9,8 @@ public record RetrievedChunk(
         int version,
         UUID chunkId,
         int chunkIndex,
+        String parentSectionId,
+        String parentSectionTitle,
         String chunkText,
         double similarityScore,
         double keywordScore,

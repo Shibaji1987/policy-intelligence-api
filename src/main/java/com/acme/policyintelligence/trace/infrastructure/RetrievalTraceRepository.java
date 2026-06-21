@@ -101,9 +101,10 @@ public class RetrievalTraceRepository {
                                 id, trace_id, document_id, document_title, version_id, version_number,
                                 chunk_id, chunk_index, similarity_score, excerpt, used_in_context,
                                 source_rank, context_rank, discard_reason, token_estimate,
-                                keyword_score, combined_score, retrieval_strategy
+                                keyword_score, combined_score, retrieval_strategy,
+                                parent_section_id, parent_section_title
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     UUID.randomUUID(),
                     traceId,
@@ -122,7 +123,9 @@ public class RetrievalTraceRepository {
                     decision == null ? 0 : decision.tokenEstimate(),
                     chunk.keywordScore(),
                     chunk.combinedScore(),
-                    chunk.retrievalStrategy()
+                    chunk.retrievalStrategy(),
+                    chunk.parentSectionId(),
+                    chunk.parentSectionTitle()
             );
         }
         return traceId;
@@ -170,6 +173,8 @@ public class RetrievalTraceRepository {
                         rs.getInt("version_number"),
                         rs.getObject("chunk_id", UUID.class),
                         rs.getInt("chunk_index"),
+                        rs.getString("parent_section_id"),
+                        rs.getString("parent_section_title"),
                         rs.getDouble("similarity_score"),
                         rs.getString("excerpt"),
                         rs.getBoolean("used_in_context"),

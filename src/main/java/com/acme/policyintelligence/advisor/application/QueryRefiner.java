@@ -11,7 +11,10 @@ import java.util.Set;
 public class QueryRefiner {
 
     public String refine(String question) {
-        return question == null ? "" : question.strip();
+        if (question == null) {
+            return "";
+        }
+        return expandDomainTerms(question.strip());
     }
 
     public QueryPlan plan(String question) {
@@ -41,5 +44,16 @@ public class QueryRefiner {
                 .replaceAll("\\b(access|policy|requirement|allowed|approval|review|data|security|risk)\\b", "$0 ")
                 .replaceAll("\\s+", " ")
                 .strip();
+    }
+
+    private String expandDomainTerms(String value) {
+        String expanded = value;
+        expanded = expanded.replaceAll("(?i)\\bprod\\b", "production environment");
+        expanded = expanded.replaceAll("(?i)\\bcontractors?\\b", "contractor third party vendor external worker");
+        expanded = expanded.replaceAll("(?i)\\bpii\\b", "PII personally identifiable information");
+        expanded = expanded.replaceAll("(?i)\\bphi\\b", "PHI protected health information");
+        expanded = expanded.replaceAll("(?i)\\bsoc2\\b", "SOC2 security compliance audit");
+        expanded = expanded.replaceAll("(?i)\\bpci[- ]?dss\\b", "PCI-DSS payment card data compliance");
+        return expanded.replaceAll("\\s+", " ").strip();
     }
 }

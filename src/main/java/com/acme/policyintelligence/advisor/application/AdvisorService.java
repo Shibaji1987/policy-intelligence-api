@@ -153,7 +153,9 @@ public class AdvisorService {
             var verification = answerVerifier.verify(answer, context);
             sink.emit(AdvisorEvent.of(AdvisorStage.ANSWER_VERIFIED, "Answer verified", Map.of(
                     "verified", verification.verified(),
-                    "reason", verification.reason()
+                    "reason", verification.reason(),
+                    "confidence", verification.confidence(),
+                    "unsupportedClaims", verification.unsupportedClaims()
             )));
 
             var features = features(question, retrieved, context.metrics().usedChunks(), context.metrics().documentDiversity());

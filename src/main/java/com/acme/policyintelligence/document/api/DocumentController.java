@@ -8,6 +8,7 @@ import com.acme.policyintelligence.document.application.DocumentSummary;
 import com.acme.policyintelligence.document.application.DocumentVersionSummary;
 import com.acme.policyintelligence.document.application.IngestDocumentCommand;
 import com.acme.policyintelligence.document.domain.ChunkingStrategy;
+import com.acme.policyintelligence.security.RetrievalAccessPolicy;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,13 +31,16 @@ public class DocumentController {
 
     private final DocumentIngestionService ingestionService;
     private final DocumentQueryService queryService;
+    private final RetrievalAccessPolicy accessPolicy;
 
     public DocumentController(
             DocumentIngestionService ingestionService,
-            DocumentQueryService queryService
+            DocumentQueryService queryService,
+            RetrievalAccessPolicy accessPolicy
     ) {
         this.ingestionService = ingestionService;
         this.queryService = queryService;
+        this.accessPolicy = accessPolicy;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -53,7 +57,7 @@ public class DocumentController {
             @RequestParam(defaultValue = "1000") int chunkSize,
             @RequestParam(defaultValue = "200") int overlap
     ) {
-        return ingestionService.create(toCommand(title, file, tenantId, department, region, documentType, classification, strategy, chunkSize, overlap));
+        return ingestionService.create(toCommand(title, file, accessPolicy.ingestionTenant(tenantId), department, region, documentType, classification, strategy, chunkSize, overlap));
     }
 
     @PostMapping(path = "/{documentId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -73,7 +77,7 @@ public class DocumentController {
         String titlePlaceholder = "existing-document";
         return ingestionService.createVersion(
                 documentId,
-                toCommand(titlePlaceholder, file, tenantId, department, region, documentType, classification, strategy, chunkSize, overlap)
+                toCommand(titlePlaceholder, file, accessPolicy.ingestionTenant(tenantId), department, region, documentType, classification, strategy, chunkSize, overlap)
         );
     }
 

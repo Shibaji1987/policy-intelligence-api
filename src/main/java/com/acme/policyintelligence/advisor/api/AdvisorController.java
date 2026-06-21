@@ -4,7 +4,9 @@ import com.acme.policyintelligence.advisor.application.AdvisorAnswer;
 import com.acme.policyintelligence.advisor.application.AdvisorRequest;
 import com.acme.policyintelligence.advisor.application.AdvisorService;
 import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
+import com.acme.policyintelligence.security.RetrievalAccessPolicy;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,9 +20,11 @@ import java.io.IOException;
 public class AdvisorController {
 
     private final AdvisorService advisorService;
+    private final RetrievalAccessPolicy accessPolicy;
 
-    public AdvisorController(AdvisorService advisorService) {
+    public AdvisorController(AdvisorService advisorService, RetrievalAccessPolicy accessPolicy) {
         this.advisorService = advisorService;
+        this.accessPolicy = accessPolicy;
     }
 
     @PostMapping
@@ -30,6 +34,22 @@ public class AdvisorController {
 
     @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestBody AdvisorRequest request) {
+        return streamInternal(request);
+    }
+
+    @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamGet(
+            @org.springframework.web.bind.annotation.RequestParam String question,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String tenantId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String department,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String region,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String documentType,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String classification
+    ) {
+        return streamInternal(new AdvisorRequest(question, tenantId, department, region, documentType, classification));
+    }
+
+    private SseEmitter streamInternal(AdvisorRequest request) {
         var emitter = new SseEmitter(120_000L);
         Thread.startVirtualThread(() -> {
             try {
@@ -50,7 +70,7 @@ public class AdvisorController {
     }
 
     private RetrievalFilters filters(AdvisorRequest request) {
-        return new RetrievalFilters(
+        return accessPolicy.filters(
                 request.tenantId(),
                 request.department(),
                 request.region(),

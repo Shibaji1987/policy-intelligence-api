@@ -10,6 +10,8 @@ public record RetrievalTraceSourceSummary(
         int versionNumber,
         UUID chunkId,
         int chunkIndex,
+        String parentSectionId,
+        String parentSectionTitle,
         double similarityScore,
         String excerpt,
         boolean usedInContext,
