@@ -77,12 +77,15 @@ enterprise knowledge platform:
 - PDF, TXT, and Markdown extraction
 - deterministic chunking strategies
 - embedding lifecycle tracking
+- embedding retries and failure reasons
 - PGVector-backed semantic retrieval
 - cosine similarity search in the database
-- context filtering before LLM calls
+- context filtering before LLM calls, including deduplication, document diversity,
+  token budget, and final chunk capping
 - LLM final answer generation from retrieved source chunks
 - source attribution for auditability
-- retrieval trace storage
+- retrieval trace storage with retrieved/used/discarded source details and latency
+  metrics
 - ML service integration for retrieval-quality prediction
 - Dockerized API, UI, ML, and database
 - local secrets kept out of Git
@@ -102,9 +105,9 @@ Upload policy document
   -> extract text
   -> chunk text
   -> generate embeddings
-  -> store chunks and vectors in PostgreSQL/PGVector
-  -> search by semantic similarity
-  -> build grounded context
+  -> store chunks and 1536-d vectors in PostgreSQL/PGVector
+  -> search by semantic similarity using cosine distance
+  -> reduce top 20 chunks into the best context window
   -> call LLM for final answer
   -> save trace, sources, and retrieval quality
 ```
@@ -142,7 +145,7 @@ Advisor Pipeline
   |
   | 8. Refine query
   | 9. Retrieve top matching chunks
-  | 10. Build context from retrieved text chunks
+  | 10. Deduplicate, diversify, and budget retrieved chunks
   | 11. Send selected text chunks to LLM
   | 12. Receive final grounded answer
   | 13. Ask ML service to score retrieval quality
@@ -196,6 +199,14 @@ Recent retrieval traces:
 
 ```text
 GET /api/v1/retrieval-traces?limit=5
+GET /api/v1/retrieval-traces/{traceId}
+```
+
+Embedding operations:
+
+```text
+POST /api/v1/embeddings/backfill
+POST /api/v1/embeddings/retry-failed
 ```
 
 Document APIs:
@@ -218,9 +229,13 @@ GET  /api/v1/documents/versions/{versionId}/chunks
 - Old chunk deactivation
 - Corpus version increments for future cache invalidation
 - Embedding lifecycle state (`PENDING`, `COMPLETED`, `FAILED`)
+- Embedding retry endpoint and stored failure reason
 - Vector retrieval with cosine distance
-- Advisor pipeline with LLM-backed final answer generation
-- Retrieval traces and ML retrieval-quality prediction
+- Advisor pipeline with LLM-backed final answer generation and extractive fallback
+- Context selection with exact discard reasons
+- Retrieval traces with source ranks, context ranks, discard reasons, and latency
+  metrics
+- ML retrieval-quality prediction
 
 ## Module structure
 
@@ -256,7 +271,7 @@ Only chunks belonging to the latest version are active.
 CorpusState is locked and incremented in the version transaction.
 ```
 
-Chunks store a PGVector embedding. Retrieval uses PGVector's cosine-distance
+Chunks store a 1536-dimensional PGVector embedding. Retrieval uses PGVector's cosine-distance
 operator:
 
 ```sql
@@ -271,6 +286,45 @@ API exposes similarity as:
 ```
 
 So a result closer to `1.0` is more similar.
+
+The active vector index is an HNSW cosine index:
+
+```sql
+USING hnsw (embedding vector_cosine_ops)
+```
+
+## Implementation Boundaries
+
+This is a production-shaped local platform, not a complete enterprise
+production deployment yet.
+
+Implemented:
+
+- Dockerized UI, API, ML service, and PGVector database
+- Spring Boot modular monolith backend
+- Spring AI `EmbeddingModel` integration point with local hashing fallback
+- explicit `VECTOR(1536)` storage
+- HNSW cosine vector index
+- top-20 retrieval for advisor flow
+- context reduction to final 5-8 chunks via max chunk count, token budget,
+  duplicate/near-duplicate removal, and document diversity quota
+- source IDs and similarity scores included in LLM context
+- SSE advisor event stages
+- retrieval cache key includes corpus version
+- trace detail API for retrieved, used, and discarded chunks
+
+Not implemented yet:
+
+- user authentication and authorization
+- document-level permissions
+- tenant isolation
+- restricted policy visibility by user
+- object storage for original uploaded files
+- production secrets manager
+- cloud Kubernetes manifests
+
+These are intentionally called out so the README does not imply security
+controls that the code has not implemented.
 
 ## Quick start on Windows
 

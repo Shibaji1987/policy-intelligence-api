@@ -71,6 +71,9 @@ public class DocumentQueryService {
                         chunk.getEmbeddingModel(),
                         chunk.getEmbeddingDimension(),
                         chunk.getEmbeddedAt(),
+                        chunk.getEmbeddingFailureReason(),
+                        chunk.getEmbeddingAttempts(),
+                        chunk.getLastEmbeddingAttemptAt(),
                         chunk.isActive()
                 ))
                 .toList();

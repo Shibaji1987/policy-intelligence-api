@@ -8,6 +8,7 @@ public record RetrievalSearchResponse(
         int returnedChunks,
         String embeddingModel,
         int embeddingDimension,
+        long corpusVersion,
         boolean cacheHit,
         List<RetrievedChunk> chunks
 ) {

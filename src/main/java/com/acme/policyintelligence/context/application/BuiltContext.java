@@ -8,6 +8,7 @@ public record BuiltContext(
         String text,
         ContextMetrics metrics,
         List<RetrievedChunk> usedChunks,
-        List<RetrievedChunk> discardedChunks
+        List<RetrievedChunk> discardedChunks,
+        List<ContextChunkDecision> decisions
 ) {
 }

@@ -89,6 +89,11 @@ public class OpenAiResponsesAnswerGenerator implements AnswerGenerator {
         }
     }
 
+    @Override
+    public String name() {
+        return enabled && StringUtils.hasText(apiKey) ? "openai_responses:" + model : "extractive_fallback";
+    }
+
     private Map<String, Object> request(String question, BuiltContext context) {
         return Map.of(
                 "model", model,

@@ -17,6 +17,14 @@ public record RetrievalTraceSummary(
         int documentDiversity,
         String mlLabel,
         Double mlProbability,
+        long corpusVersion,
+        boolean cacheHit,
+        long retrievalLatencyMs,
+        long contextBuildLatencyMs,
+        long llmLatencyMs,
+        long mlLatencyMs,
+        long totalLatencyMs,
+        String answerGenerator,
         OffsetDateTime createdAt
 ) {
 }

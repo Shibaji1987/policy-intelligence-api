@@ -20,4 +20,9 @@ public class EmbeddingController {
     public EmbeddingBackfillResult backfill() {
         return embeddingService.embedPendingChunks();
     }
+
+    @PostMapping("/retry-failed")
+    public EmbeddingBackfillResult retryFailed() {
+        return embeddingService.retryFailedChunks();
+    }
 }

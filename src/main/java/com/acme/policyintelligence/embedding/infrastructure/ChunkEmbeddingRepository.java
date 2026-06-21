@@ -51,7 +51,10 @@ public class ChunkEmbeddingRepository {
                             embedding_status = ?,
                             embedding_model = ?,
                             embedding_dimension = ?,
-                            embedded_at = ?
+                            embedded_at = ?,
+                            embedding_failure_reason = NULL,
+                            embedding_attempts = embedding_attempts + 1,
+                            last_embedding_attempt_at = ?
                         WHERE id = ?
                         """,
                 toVectorLiteral(embedding.values()),
@@ -59,16 +62,51 @@ public class ChunkEmbeddingRepository {
                 embedding.model(),
                 embedding.dimension(),
                 Timestamp.from(Instant.now()),
+                Timestamp.from(Instant.now()),
                 chunkId
         );
     }
 
-    public void markFailed(UUID chunkId) {
+    public void markFailed(UUID chunkId, String reason) {
         jdbcTemplate.update(
-                "UPDATE document_chunk SET embedding_status = ? WHERE id = ?",
+                """
+                        UPDATE document_chunk
+                        SET embedding_status = ?,
+                            embedding_failure_reason = ?,
+                            embedding_attempts = embedding_attempts + 1,
+                            last_embedding_attempt_at = ?
+                        WHERE id = ?
+                        """,
                 EmbeddingStatus.FAILED.name(),
+                truncate(reason, 2_000),
+                Timestamp.from(Instant.now()),
                 chunkId
         );
+    }
+
+    public int retryFailedChunks() {
+        return jdbcTemplate.update(
+                """
+                        UPDATE document_chunk
+                        SET embedding_status = 'PENDING',
+                            embedding_failure_reason = NULL
+                        WHERE active = true AND embedding_status = 'FAILED'
+                        """
+        );
+    }
+
+    public int countFailedChunks() {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_chunk WHERE active = true AND embedding_status = 'FAILED'",
+                Integer.class
+        );
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "Unknown embedding failure";
+        }
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     public String toVectorLiteral(float[] vector) {

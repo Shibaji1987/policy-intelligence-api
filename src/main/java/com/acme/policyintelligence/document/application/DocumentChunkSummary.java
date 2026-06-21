@@ -17,6 +17,9 @@ public record DocumentChunkSummary(
         String embeddingModel,
         Integer embeddingDimension,
         OffsetDateTime embeddedAt,
+        String embeddingFailureReason,
+        int embeddingAttempts,
+        OffsetDateTime lastEmbeddingAttemptAt,
         boolean active
 ) {
 }

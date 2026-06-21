@@ -46,11 +46,23 @@ public class EmbeddingService {
                     completed++;
                 } catch (RuntimeException exception) {
                     LOGGER.warn("Could not embed chunk {}", chunk.id(), exception);
-                    chunkEmbeddingRepository.markFailed(chunk.id());
+                    chunkEmbeddingRepository.markFailed(chunk.id(), exception.getMessage());
                     failed++;
                 }
             }
         }
-        return new EmbeddingBackfillResult(completed, failed, chunkEmbeddingRepository.countPendingChunks());
+        return new EmbeddingBackfillResult(
+                completed,
+                failed,
+                chunkEmbeddingRepository.countPendingChunks(),
+                chunkEmbeddingRepository.countFailedChunks()
+        );
+    }
+
+    @Transactional
+    public EmbeddingBackfillResult retryFailedChunks() {
+        int retried = chunkEmbeddingRepository.retryFailedChunks();
+        LOGGER.info("Embedding retry requested. resetFailedChunks={}", retried);
+        return embedPendingChunks();
     }
 }

@@ -49,6 +49,7 @@ public class RetrievalSearchService {
                     response.returnedChunks(),
                     response.embeddingModel(),
                     response.embeddingDimension(),
+                    response.corpusVersion(),
                     true,
                     response.chunks()
             );
@@ -61,6 +62,7 @@ public class RetrievalSearchService {
                 chunks.size(),
                 queryEmbedding.model(),
                 queryEmbedding.dimension(),
+                corpusVersion,
                 false,
                 chunks
         );

@@ -56,6 +56,15 @@ public class DocumentChunk {
     @Column(name = "embedded_at")
     private OffsetDateTime embeddedAt;
 
+    @Column(name = "embedding_failure_reason", columnDefinition = "text")
+    private String embeddingFailureReason;
+
+    @Column(name = "embedding_attempts", nullable = false)
+    private int embeddingAttempts;
+
+    @Column(name = "last_embedding_attempt_at")
+    private OffsetDateTime lastEmbeddingAttemptAt;
+
     protected DocumentChunk() {
     }
 
@@ -119,5 +128,17 @@ public class DocumentChunk {
 
     public OffsetDateTime getEmbeddedAt() {
         return embeddedAt;
+    }
+
+    public String getEmbeddingFailureReason() {
+        return embeddingFailureReason;
+    }
+
+    public int getEmbeddingAttempts() {
+        return embeddingAttempts;
+    }
+
+    public OffsetDateTime getLastEmbeddingAttemptAt() {
+        return lastEmbeddingAttemptAt;
     }
 }

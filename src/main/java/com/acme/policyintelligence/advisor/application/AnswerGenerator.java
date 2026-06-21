@@ -5,4 +5,8 @@ import com.acme.policyintelligence.context.application.BuiltContext;
 public interface AnswerGenerator {
 
     String answer(String question, BuiltContext context);
+
+    default String name() {
+        return getClass().getSimpleName();
+    }
 }

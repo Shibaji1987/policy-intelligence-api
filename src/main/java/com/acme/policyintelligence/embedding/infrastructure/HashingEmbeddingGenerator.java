@@ -2,6 +2,7 @@ package com.acme.policyintelligence.embedding.infrastructure;
 
 import com.acme.policyintelligence.embedding.application.EmbeddingGenerator;
 import com.acme.policyintelligence.embedding.application.EmbeddingVector;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -10,10 +11,11 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Component
+@ConditionalOnMissingBean(EmbeddingGenerator.class)
 public class HashingEmbeddingGenerator implements EmbeddingGenerator {
 
-    public static final int DIMENSION = 384;
-    private static final String MODEL = "local-hashing-embedding-v1";
+    public static final int DIMENSION = 1536;
+    private static final String MODEL = "local-hashing-embedding-v2";
     private static final Pattern NON_WORD = Pattern.compile("[^a-z0-9]+");
 
     @Override
