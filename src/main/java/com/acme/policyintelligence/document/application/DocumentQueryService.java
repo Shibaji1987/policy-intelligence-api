@@ -33,6 +33,11 @@ public class DocumentQueryService {
                 .map(document -> new DocumentSummary(
                         document.getId(),
                         document.getTitle(),
+                        document.getTenantId(),
+                        document.getDepartment(),
+                        document.getRegion(),
+                        document.getDocumentType(),
+                        document.getClassification(),
                         document.getCreatedAt(),
                         document.getUpdatedAt()
                 ))

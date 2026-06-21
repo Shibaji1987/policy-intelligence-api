@@ -3,6 +3,7 @@ package com.acme.policyintelligence.advisor.api;
 import com.acme.policyintelligence.advisor.application.AdvisorAnswer;
 import com.acme.policyintelligence.advisor.application.AdvisorRequest;
 import com.acme.policyintelligence.advisor.application.AdvisorService;
+import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,7 +25,7 @@ public class AdvisorController {
 
     @PostMapping
     public AdvisorAnswer answer(@RequestBody AdvisorRequest request) {
-        return advisorService.answer(request.question());
+        return advisorService.answer(request.question(), filters(request));
     }
 
     @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -32,7 +33,7 @@ public class AdvisorController {
         var emitter = new SseEmitter(120_000L);
         Thread.startVirtualThread(() -> {
             try {
-                var answer = advisorService.answer(request.question(), event -> {
+                var answer = advisorService.answer(request.question(), filters(request), event -> {
                     try {
                         emitter.send(SseEmitter.event().name(event.stage().name()).data(event));
                     } catch (IOException exception) {
@@ -46,5 +47,15 @@ public class AdvisorController {
             }
         });
         return emitter;
+    }
+
+    private RetrievalFilters filters(AdvisorRequest request) {
+        return new RetrievalFilters(
+                request.tenantId(),
+                request.department(),
+                request.region(),
+                request.documentType(),
+                request.classification()
+        );
     }
 }

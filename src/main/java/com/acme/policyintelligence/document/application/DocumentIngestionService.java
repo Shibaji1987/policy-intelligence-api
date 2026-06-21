@@ -51,7 +51,14 @@ public class DocumentIngestionService {
     @Transactional
     public DocumentIngestionResult create(IngestDocumentCommand command) {
         validate(command);
-        var document = documentRepository.saveAndFlush(new Document(command.title().trim()));
+        var document = documentRepository.saveAndFlush(new Document(
+                command.title().trim(),
+                command.tenantId(),
+                command.department(),
+                command.region(),
+                command.documentType(),
+                command.classification()
+        ));
         return createVersion(document, command);
     }
 
@@ -101,7 +108,12 @@ public class DocumentIngestionService {
                         Map.of(
                                 "originalFilename", command.originalFilename(),
                                 "version", versionNumber,
-                                "chunkingStrategy", command.chunkingStrategy().name()
+                                "chunkingStrategy", command.chunkingStrategy().name(),
+                                "tenantId", document.getTenantId(),
+                                "department", document.getDepartment() == null ? "" : document.getDepartment(),
+                                "region", document.getRegion() == null ? "" : document.getRegion(),
+                                "documentType", document.getDocumentType() == null ? "" : document.getDocumentType(),
+                                "classification", document.getClassification() == null ? "" : document.getClassification()
                         )
                 ))
                 .toList();

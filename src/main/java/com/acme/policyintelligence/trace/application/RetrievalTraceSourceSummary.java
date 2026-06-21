@@ -16,6 +16,9 @@ public record RetrievalTraceSourceSummary(
         int sourceRank,
         Integer contextRank,
         String discardReason,
-        int tokenEstimate
+        int tokenEstimate,
+        double keywordScore,
+        double combinedScore,
+        String retrievalStrategy
 ) {
 }

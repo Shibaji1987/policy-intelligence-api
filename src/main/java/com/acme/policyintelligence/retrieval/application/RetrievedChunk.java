@@ -11,6 +11,9 @@ public record RetrievedChunk(
         int chunkIndex,
         String chunkText,
         double similarityScore,
+        double keywordScore,
+        double combinedScore,
+        String retrievalStrategy,
         String excerpt
 ) {
 }

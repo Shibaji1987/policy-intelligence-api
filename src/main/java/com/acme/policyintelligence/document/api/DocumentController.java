@@ -44,11 +44,16 @@ public class DocumentController {
     public DocumentIngestionResult create(
             @RequestParam String title,
             @RequestParam MultipartFile file,
+            @RequestParam(defaultValue = "default") String tenantId,
+            @RequestParam(required = false) String department,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String documentType,
+            @RequestParam(required = false) String classification,
             @RequestParam(defaultValue = "FIXED_SIZE") ChunkingStrategy strategy,
             @RequestParam(defaultValue = "1000") int chunkSize,
             @RequestParam(defaultValue = "200") int overlap
     ) {
-        return ingestionService.create(toCommand(title, file, strategy, chunkSize, overlap));
+        return ingestionService.create(toCommand(title, file, tenantId, department, region, documentType, classification, strategy, chunkSize, overlap));
     }
 
     @PostMapping(path = "/{documentId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -56,6 +61,11 @@ public class DocumentController {
     public DocumentIngestionResult createVersion(
             @PathVariable UUID documentId,
             @RequestParam MultipartFile file,
+            @RequestParam(defaultValue = "default") String tenantId,
+            @RequestParam(required = false) String department,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String documentType,
+            @RequestParam(required = false) String classification,
             @RequestParam(defaultValue = "FIXED_SIZE") ChunkingStrategy strategy,
             @RequestParam(defaultValue = "1000") int chunkSize,
             @RequestParam(defaultValue = "200") int overlap
@@ -63,7 +73,7 @@ public class DocumentController {
         String titlePlaceholder = "existing-document";
         return ingestionService.createVersion(
                 documentId,
-                toCommand(titlePlaceholder, file, strategy, chunkSize, overlap)
+                toCommand(titlePlaceholder, file, tenantId, department, region, documentType, classification, strategy, chunkSize, overlap)
         );
     }
 
@@ -85,6 +95,11 @@ public class DocumentController {
     private IngestDocumentCommand toCommand(
             String title,
             MultipartFile file,
+            String tenantId,
+            String department,
+            String region,
+            String documentType,
+            String classification,
             ChunkingStrategy strategy,
             int chunkSize,
             int overlap
@@ -95,6 +110,11 @@ public class DocumentController {
                     file.getOriginalFilename() == null ? "uploaded-file" : file.getOriginalFilename(),
                     file.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.getContentType(),
                     file.getBytes(),
+                    tenantId,
+                    department,
+                    region,
+                    documentType,
+                    classification,
                     strategy,
                     chunkSize,
                     overlap

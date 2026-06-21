@@ -80,12 +80,21 @@ enterprise knowledge platform:
 - embedding retries and failure reasons
 - PGVector-backed semantic retrieval
 - cosine similarity search in the database
+- hybrid retrieval that blends PGVector cosine similarity with Postgres
+  full-text keyword score
+- metadata filters for tenant, department, region, document type, and
+  classification
+- multi-query advisor retrieval, parent-child neighbor expansion, and
+  deterministic reranking before context selection
 - context filtering before LLM calls, including deduplication, document diversity,
   token budget, and final chunk capping
+- answer verification checks before trace completion
 - LLM final answer generation from retrieved source chunks
 - source attribution for auditability
 - retrieval trace storage with retrieved/used/discarded source details and latency
   metrics
+- human feedback collection on retrieval traces
+- starter golden-question evaluation endpoint
 - ML service integration for retrieval-quality prediction
 - Dockerized API, UI, ML, and database
 - local secrets kept out of Git
@@ -106,8 +115,10 @@ Upload policy document
   -> chunk text
   -> generate embeddings
   -> store chunks and 1536-d vectors in PostgreSQL/PGVector
-  -> search by semantic similarity using cosine distance
-  -> reduce top 20 chunks into the best context window
+  -> search by semantic similarity using cosine distance plus keyword scoring
+  -> plan multiple retrieval queries
+  -> expand neighboring chunks for parent-child context
+  -> rerank and reduce top candidates into the best 5-8 chunks
   -> call LLM for final answer
   -> save trace, sources, and retrieval quality
 ```
@@ -139,20 +150,22 @@ Spring Boot API
 PostgreSQL + PGVector
   |
   | 6. Store document, version, chunk, vector, trace data
-  | 7. Run vector search using cosine distance
+  | 7. Run hybrid vector + keyword search using cosine distance and full text
   v
 Advisor Pipeline
   |
   | 8. Refine query
-  | 9. Retrieve top matching chunks
-  | 10. Deduplicate, diversify, and budget retrieved chunks
-  | 11. Send selected text chunks to LLM
-  | 12. Receive final grounded answer
-  | 13. Ask ML service to score retrieval quality
+  | 9. Generate multiple retrieval queries
+  | 10. Retrieve top matching chunks
+  | 11. Expand neighbor chunks for broader source sections
+  | 12. Rerank, deduplicate, diversify, and budget retrieved chunks
+  | 13. Send selected text chunks to LLM
+  | 14. Verify source citation shape
+  | 15. Ask ML service to score retrieval quality
   v
 Trace + Response
   |
-  | 14. Save trace, sources, similarity scores, ML label
+  | 16. Save trace, sources, similarity scores, ML label, and verification status
   v
 UI displays answer, sources, chunks, and retrieval quality
 ```
@@ -180,7 +193,7 @@ ui            Angular production build served by Nginx
 Direct vector search:
 
 ```text
-GET /api/v1/retrieval/search?query=...&topK=5
+GET /api/v1/retrieval/search?query=...&topK=5&tenantId=default
 ```
 
 Full advisor flow with LLM answer generation:
@@ -200,6 +213,13 @@ Recent retrieval traces:
 ```text
 GET /api/v1/retrieval-traces?limit=5
 GET /api/v1/retrieval-traces/{traceId}
+POST /api/v1/retrieval-traces/{traceId}/feedback
+```
+
+Golden-question evaluation starter:
+
+```text
+GET /api/v1/evaluations/golden-questions
 ```
 
 Embedding operations:

@@ -40,7 +40,11 @@ public class RetrievalTraceRepository {
             long corpusVersion,
             boolean cacheHit,
             RetrievalTraceTimings timings,
-            String answerGenerator
+            String answerGenerator,
+            String retrievalStrategy,
+            String queryPlan,
+            boolean answerVerified,
+            String answerVerificationReason
     ) {
         UUID traceId = UUID.randomUUID();
         jdbcTemplate.update(
@@ -50,9 +54,10 @@ public class RetrievalTraceRepository {
                             discarded_chunks, estimated_tokens, top_similarity_score,
                             avg_top5_similarity, document_diversity, ml_label, ml_probability,
                             corpus_version, cache_hit, retrieval_latency_ms, context_build_latency_ms,
-                            llm_latency_ms, ml_latency_ms, total_latency_ms, answer_generator, created_at
+                            llm_latency_ms, ml_latency_ms, total_latency_ms, answer_generator,
+                            retrieval_strategy, query_plan, answer_verified, answer_verification_reason, created_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 traceId,
                 question,
@@ -75,6 +80,10 @@ public class RetrievalTraceRepository {
                 timings.mlLatencyMs(),
                 timings.totalLatencyMs(),
                 answerGenerator,
+                retrievalStrategy,
+                queryPlan,
+                answerVerified,
+                answerVerificationReason,
                 Timestamp.from(Instant.now())
         );
 
@@ -91,9 +100,10 @@ public class RetrievalTraceRepository {
                             INSERT INTO retrieval_trace_source (
                                 id, trace_id, document_id, document_title, version_id, version_number,
                                 chunk_id, chunk_index, similarity_score, excerpt, used_in_context,
-                                source_rank, context_rank, discard_reason, token_estimate
+                                source_rank, context_rank, discard_reason, token_estimate,
+                                keyword_score, combined_score, retrieval_strategy
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     UUID.randomUUID(),
                     traceId,
@@ -109,7 +119,10 @@ public class RetrievalTraceRepository {
                     index + 1,
                     decision == null ? null : decision.contextRank(),
                     decision == null ? "NOT_EVALUATED" : decision.reason(),
-                    decision == null ? 0 : decision.tokenEstimate()
+                    decision == null ? 0 : decision.tokenEstimate(),
+                    chunk.keywordScore(),
+                    chunk.combinedScore(),
+                    chunk.retrievalStrategy()
             );
         }
         return traceId;
@@ -163,11 +176,44 @@ public class RetrievalTraceRepository {
                         rs.getInt("source_rank"),
                         (Integer) rs.getObject("context_rank"),
                         rs.getString("discard_reason"),
-                        rs.getInt("token_estimate")
+                        rs.getInt("token_estimate"),
+                        rs.getDouble("keyword_score"),
+                        rs.getDouble("combined_score"),
+                        rs.getString("retrieval_strategy")
                 ),
                 traceId
         );
         return Optional.of(new RetrievalTraceDetail(summaries.getFirst(), sources));
+    }
+
+    public UUID saveFeedback(UUID traceId, String rating, String comment) {
+        if (findDetail(traceId).isEmpty()) {
+            throw new IllegalArgumentException("Retrieval trace not found: " + traceId);
+        }
+        UUID feedbackId = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                        INSERT INTO retrieval_feedback (id, trace_id, rating, comment, created_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                feedbackId,
+                traceId,
+                normalizeRating(rating),
+                comment,
+                Timestamp.from(Instant.now())
+        );
+        return feedbackId;
+    }
+
+    private String normalizeRating(String rating) {
+        if (rating == null || rating.isBlank()) {
+            throw new IllegalArgumentException("Feedback rating is required");
+        }
+        String normalized = rating.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("THUMBS_UP", "THUMBS_DOWN", "GOOD_RETRIEVAL", "BAD_RETRIEVAL").contains(normalized)) {
+            throw new IllegalArgumentException("Unsupported feedback rating: " + rating);
+        }
+        return normalized;
     }
 
     private RetrievalTraceSummary mapTraceSummary(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -193,6 +239,10 @@ public class RetrievalTraceRepository {
                 rs.getLong("ml_latency_ms"),
                 rs.getLong("total_latency_ms"),
                 rs.getString("answer_generator"),
+                rs.getString("retrieval_strategy"),
+                rs.getString("query_plan"),
+                rs.getBoolean("answer_verified"),
+                rs.getString("answer_verification_reason"),
                 rs.getTimestamp("created_at").toInstant().atOffset(java.time.ZoneOffset.UTC)
         );
     }

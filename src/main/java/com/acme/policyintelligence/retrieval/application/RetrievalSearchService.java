@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RetrievalSearchService {
 
     private static final int DEFAULT_TOP_K = 5;
-    private static final int MAX_TOP_K = 20;
+    private static final int MAX_TOP_K = 50;
 
     private final EmbeddingGenerator embeddingGenerator;
     private final VectorSearchRepository vectorSearchRepository;
@@ -32,14 +32,19 @@ public class RetrievalSearchService {
     }
 
     public RetrievalSearchResponse search(String query, Integer topK) {
+        return search(query, topK, RetrievalFilters.defaults());
+    }
+
+    public RetrievalSearchResponse search(String query, Integer topK, RetrievalFilters filters) {
         if (query == null || query.isBlank()) {
             throw new IllegalArgumentException("Query must not be blank");
         }
+        RetrievalFilters effectiveFilters = filters == null ? RetrievalFilters.defaults() : filters;
         int effectiveTopK = topK == null ? DEFAULT_TOP_K : Math.clamp(topK, 1, MAX_TOP_K);
         long corpusVersion = corpusStateRepository.findById((short) 1)
                 .orElseThrow()
                 .getCorpusVersion();
-        String cacheKey = query.strip().toLowerCase() + "|" + effectiveTopK + "|" + corpusVersion;
+        String cacheKey = query.strip().toLowerCase() + "|" + effectiveTopK + "|" + corpusVersion + "|" + effectiveFilters.cacheKey();
         var cached = retrievalCache.get(cacheKey);
         if (cached.isPresent()) {
             var response = cached.get();
@@ -55,7 +60,7 @@ public class RetrievalSearchService {
             );
         }
         var queryEmbedding = embeddingGenerator.embed(query);
-        var chunks = vectorSearchRepository.search(queryEmbedding.values(), effectiveTopK);
+        var chunks = vectorSearchRepository.search(queryEmbedding.values(), query, effectiveTopK, effectiveFilters);
         var response = new RetrievalSearchResponse(
                 query,
                 effectiveTopK,

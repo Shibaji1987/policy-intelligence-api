@@ -25,6 +25,10 @@ public record RetrievalTraceSummary(
         long mlLatencyMs,
         long totalLatencyMs,
         String answerGenerator,
+        String retrievalStrategy,
+        String queryPlan,
+        boolean answerVerified,
+        String answerVerificationReason,
         OffsetDateTime createdAt
 ) {
 }
