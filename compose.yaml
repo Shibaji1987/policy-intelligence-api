@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: policy_intelligence
+      POSTGRES_USER: policy
+      POSTGRES_PASSWORD: policy
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U policy -d policy_intelligence"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - policy-postgres-data:/var/lib/postgresql/data
+
+  ml-service:
+    build:
+      context: ../policy-intelligence-ml
+    environment:
+      MODEL_PATH: /models/retrieval_quality.joblib
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - policy-ml-models:/models
+
+  api:
+    build:
+      context: .
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/policy_intelligence
+      DB_USERNAME: policy
+      DB_PASSWORD: policy
+      ML_BASE_URL: http://ml-service:8090
+      CORS_ALLOWED_ORIGINS: http://localhost:4200,http://127.0.0.1:4200
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.secrets:/run/policy-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  ui:
+    build:
+      context: ../policy-intelligence-ui
+    ports:
+      - "4200:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  policy-postgres-data:
+  policy-ml-models:

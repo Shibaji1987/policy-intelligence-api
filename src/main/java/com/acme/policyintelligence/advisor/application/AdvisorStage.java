@@ -1,0 +1,14 @@
+package com.acme.policyintelligence.advisor.application;
+
+public enum AdvisorStage {
+    QUESTION_RECEIVED,
+    QUERY_REFINED,
+    VECTOR_SEARCH_STARTED,
+    CHUNKS_RETRIEVED,
+    CONTEXT_FILTERING_STARTED,
+    CONTEXT_BUILT,
+    LLM_STARTED,
+    SOURCE_ATTRIBUTION_CREATED,
+    ANSWER_COMPLETED,
+    ANSWER_FAILED
+}

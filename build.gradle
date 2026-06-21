@@ -1,0 +1,96 @@
+plugins {
+	id 'java'
+	id 'jacoco'
+	id 'checkstyle'
+	id 'org.springframework.boot' version '3.5.7'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.acme'
+version = '0.0.1-SNAPSHOT'
+description = 'Enterprise RAG Policy Intelligence Platform'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+configurations {
+	configureEach {
+		exclude group: 'commons-logging', module: 'commons-logging'
+	}
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+	testImplementation {
+		exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+	}
+	testRuntimeClasspath {
+		exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+	}
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+	implementation 'org.apache.pdfbox:pdfbox:3.0.5'
+	implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
+	runtimeOnly 'org.postgresql:postgresql'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	finalizedBy jacocoTestReport
+}
+
+tasks.register('freeApplicationPort') {
+	group = 'application'
+	description = 'Stops a stale Policy Intelligence API process on the configured server port before bootRun.'
+
+	doLast {
+		def requestedPort = System.getenv('SERVER_PORT') ?: project.findProperty('serverPort') ?: '8080'
+		def shell = System.getProperty('os.name').toLowerCase().contains('windows') ? 'bash' : 'sh'
+		exec {
+			commandLine shell,
+					file('scripts/free-application-port.sh').absolutePath,
+					requestedPort
+		}
+	}
+}
+
+tasks.withType(JavaExec).configureEach {
+	dependsOn tasks.named('freeApplicationPort')
+	if (project.hasProperty('serverPort')) {
+		environment 'SERVER_PORT', project.property('serverPort')
+	}
+}
+
+jacocoTestReport {
+	dependsOn test
+	reports {
+		xml.required = true
+		html.required = true
+	}
+}
+
+checkstyle {
+	toolVersion = '10.21.4'
+	configFile = file('config/checkstyle/checkstyle.xml')
+}
+
+tasks.named('check') {
+	dependsOn jacocoTestReport
+}
