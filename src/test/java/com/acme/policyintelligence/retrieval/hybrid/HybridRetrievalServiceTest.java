@@ -2,6 +2,7 @@ package com.acme.policyintelligence.retrieval.hybrid;
 
 import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
+import com.acme.policyintelligence.retrieval.fusion.FusionProperties;
 import com.acme.policyintelligence.retrieval.fusion.ReciprocalRankFusionService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of(chunk("vector"))),
                 keywordService(List.of(chunk("keyword"))),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -40,7 +41,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 failingVectorService(),
                 keywordService(List.of(chunk("keyword"))),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -61,7 +62,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of(chunk("vector"))),
                 failingKeywordService(),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -78,7 +79,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 failingVectorService(),
                 failingKeywordService(),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -95,7 +96,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of()),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -112,7 +113,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of()),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -126,7 +127,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of()),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -148,7 +149,7 @@ class HybridRetrievalServiceTest {
                     }
                 },
                 keywordService(List.of()),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
 
@@ -164,7 +165,7 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of(chunk("vector"))),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService(),
+                fusionService(),
                 new SimpleMeterRegistry()
         );
         var request = new HybridSearchRequest(
@@ -221,6 +222,10 @@ class HybridRetrievalServiceTest {
                 throw new IllegalStateException("keyword unavailable");
             }
         };
+    }
+
+    private ReciprocalRankFusionService fusionService() {
+        return new ReciprocalRankFusionService(new FusionProperties(60), new SimpleMeterRegistry());
     }
 
     private RetrievedChunk chunk(String title) {
