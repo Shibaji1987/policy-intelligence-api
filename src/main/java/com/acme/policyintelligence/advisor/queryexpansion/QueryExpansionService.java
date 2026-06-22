@@ -2,38 +2,67 @@ package com.acme.policyintelligence.advisor.queryexpansion;
 
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashSet;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
 @Service
 public class QueryExpansionService {
 
-    private static final int MAX_QUERIES = 5;
+    private final List<QueryExpansionStrategy> strategies;
+    private final QueryExpansionProperties properties;
+
+    public QueryExpansionService(
+            List<QueryExpansionStrategy> strategies,
+            QueryExpansionProperties properties
+    ) {
+        this.strategies = List.copyOf(strategies);
+        this.properties = properties;
+    }
 
     public QueryExpansionResult expand(QueryExpansionRequest request) {
+        Instant started = Instant.now();
         String baseQuery = request.baseQuery() == null ? "" : request.baseQuery().strip();
-        var generated = new LinkedHashSet<GeneratedQuery>();
-        generated.add(new GeneratedQuery(baseQuery, "direct semantic match"));
+        var deduped = new LinkedHashMap<String, GeneratedQuery>();
+        add(deduped, new GeneratedQuery(
+                baseQuery.isBlank() ? "policy" : baseQuery,
+                baseQuery.isBlank() ? "fallback query for empty input" : "direct semantic match",
+                "BASE_QUERY",
+                baseQuery.isBlank() ? 0.35 : 0.95
+        ));
 
-        String lower = baseQuery.toLowerCase(Locale.ROOT);
-        if (lower.contains("contractor") || lower.contains("vendor") || lower.contains("third party")) {
-            generated.add(new GeneratedQuery("third party access sensitive customer data approval", "policy synonym expansion"));
-            generated.add(new GeneratedQuery("external worker production data policy restrictions", "role synonym expansion"));
-        }
-        if (lower.contains("approval") || lower.contains("access")) {
-            generated.add(new GeneratedQuery("privileged access approval requirements evidence review", "approval and evidence expansion"));
-        }
-        if (lower.contains("production") || lower.contains("customer data")) {
-            generated.add(new GeneratedQuery("production customer data security policy exception", "environment and data sensitivity expansion"));
+        for (QueryExpansionStrategy strategy : strategies) {
+            for (GeneratedQuery generatedQuery : strategy.expand(baseQuery)) {
+                add(deduped, generatedQuery);
+            }
         }
 
-        List<GeneratedQuery> queries = generated.stream()
+        List<GeneratedQuery> generatedQueries = deduped.values().stream()
                 .filter(query -> !query.query().isBlank())
-                .limit(MAX_QUERIES)
+                .limit(properties.maxQueries())
                 .toList();
-        return new QueryExpansionResult(baseQuery, queries.isEmpty()
-                ? List.of(new GeneratedQuery(baseQuery, "fallback original query"))
-                : queries);
+        return new QueryExpansionResult(
+                baseQuery,
+                generatedQueries,
+                "RULE_BASED_CONFIGURABLE",
+                Duration.between(started, Instant.now()).toMillis(),
+                generatedQueries.isEmpty() ? "EMPTY" : "COMPLETED"
+        );
+    }
+
+    private void add(LinkedHashMap<String, GeneratedQuery> deduped, GeneratedQuery generatedQuery) {
+        String key = normalize(generatedQuery.query());
+        if (!key.isBlank()) {
+            deduped.putIfAbsent(key, generatedQuery);
+        }
+    }
+
+    private String normalize(String query) {
+        return query == null ? "" : query.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .strip();
     }
 }
