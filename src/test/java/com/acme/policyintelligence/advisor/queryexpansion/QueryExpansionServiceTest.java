@@ -55,6 +55,24 @@ class QueryExpansionServiceTest {
     }
 
     @Test
+    void keepsHigherConfidenceDuplicateQuery() {
+        QueryExpansionService service = service(List.of(
+                query -> List.of(
+                        generated("contractor access policy", 0.40),
+                        generated("contractor   access, policy", 0.88)
+                )
+        ));
+
+        QueryExpansionResult result = service.expand(new QueryExpansionRequest("base query"));
+
+        assertThat(result.generatedQueries())
+                .filteredOn(query -> query.query().equals("contractor   access, policy"))
+                .singleElement()
+                .extracting(GeneratedQuery::confidence)
+                .isEqualTo(0.88);
+    }
+
+    @Test
     void sortsByConfidenceBeforeLimit() {
         QueryExpansionService service = service(List.of(
                 query -> List.of(

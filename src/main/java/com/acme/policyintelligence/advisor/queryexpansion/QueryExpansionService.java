@@ -66,7 +66,11 @@ public class QueryExpansionService {
     private void add(LinkedHashMap<String, GeneratedQuery> deduped, GeneratedQuery generatedQuery) {
         String key = normalize(generatedQuery.query());
         if (!key.isBlank()) {
-            deduped.putIfAbsent(key, generatedQuery);
+            deduped.merge(
+                    key,
+                    generatedQuery,
+                    (existing, candidate) -> candidate.confidence() > existing.confidence() ? candidate : existing
+            );
         }
     }
 
