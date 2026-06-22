@@ -10,14 +10,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QueryExpansionServiceTest {
 
     @Test
-    void returnsFallbackQueryForEmptyInput() {
+    void returnsEmptyResultForEmptyInput() {
         QueryExpansionService service = service(List.of());
 
         QueryExpansionResult result = service.expand(new QueryExpansionRequest(""));
 
-        assertThat(result.status()).isEqualTo("COMPLETED");
-        assertThat(result.generatedQueries()).hasSize(1);
-        assertThat(result.generatedQueries().getFirst().query()).isEqualTo("policy");
+        assertThat(result.status()).isEqualTo("EMPTY_INPUT");
+        assertThat(result.generatedQueries()).isEmpty();
     }
 
     @Test
@@ -39,7 +38,7 @@ class QueryExpansionServiceTest {
     }
 
     @Test
-    void removesDuplicateQueriesWhilePreservingOrder() {
+    void removesDuplicateQueries() {
         QueryExpansionService service = service(List.of(
                 query -> List.of(
                         generated("contractor access policy"),
@@ -53,6 +52,23 @@ class QueryExpansionServiceTest {
         assertThat(result.generatedQueries())
                 .extracting(GeneratedQuery::query)
                 .containsExactly("contractor access policy", "third party access policy");
+    }
+
+    @Test
+    void sortsByConfidenceBeforeLimit() {
+        QueryExpansionService service = service(List.of(
+                query -> List.of(
+                        generated("low", 0.10),
+                        generated("high", 0.99),
+                        generated("medium", 0.70)
+                )
+        ));
+
+        QueryExpansionResult result = service.expand(new QueryExpansionRequest("base query"));
+
+        assertThat(result.generatedQueries())
+                .extracting(GeneratedQuery::query)
+                .containsExactly("high", "base query", "medium", "low");
     }
 
     private QueryExpansionService service(List<QueryExpansionStrategy> strategies) {
@@ -71,5 +87,9 @@ class QueryExpansionServiceTest {
 
     private GeneratedQuery generated(String query) {
         return new GeneratedQuery(query, "test", "TEST", 0.5);
+    }
+
+    private GeneratedQuery generated(String query, double confidence) {
+        return new GeneratedQuery(query, "test", "TEST", confidence);
     }
 }

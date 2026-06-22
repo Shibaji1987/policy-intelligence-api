@@ -92,6 +92,12 @@ public class AdvisorService {
             List<String> retrievalQueries = expansion.generatedQueries().stream()
                     .map(generated -> generated.query())
                     .toList();
+            if (retrievalQueries.isEmpty() && !refinedQuery.isBlank()) {
+                retrievalQueries = List.of(refinedQuery);
+            }
+            if (retrievalQueries.isEmpty()) {
+                throw new IllegalArgumentException("Question must produce at least one retrieval query");
+            }
             sink.emit(AdvisorEvent.of(AdvisorStage.QUERY_REFINED, "Query refined", Map.of(
                     "query", refinedQuery,
                     "rewriteStrategy", rewrite.rewriteStrategy(),

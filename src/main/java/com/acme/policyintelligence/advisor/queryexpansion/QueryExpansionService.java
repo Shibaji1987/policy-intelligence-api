@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -25,12 +26,21 @@ public class QueryExpansionService {
     public QueryExpansionResult expand(QueryExpansionRequest request) {
         Instant started = Instant.now();
         String baseQuery = request.baseQuery() == null ? "" : request.baseQuery().strip();
+        if (baseQuery.isBlank()) {
+            return new QueryExpansionResult(
+                    baseQuery,
+                    List.of(),
+                    "RULE_BASED_CONFIGURABLE",
+                    Duration.between(started, Instant.now()).toMillis(),
+                    "EMPTY_INPUT"
+            );
+        }
         var deduped = new LinkedHashMap<String, GeneratedQuery>();
         add(deduped, new GeneratedQuery(
-                baseQuery.isBlank() ? "policy" : baseQuery,
-                baseQuery.isBlank() ? "fallback query for empty input" : "direct semantic match",
+                baseQuery,
+                "direct semantic match",
                 "BASE_QUERY",
-                baseQuery.isBlank() ? 0.35 : 0.95
+                0.95
         ));
 
         for (QueryExpansionStrategy strategy : strategies) {
@@ -41,6 +51,7 @@ public class QueryExpansionService {
 
         List<GeneratedQuery> generatedQueries = deduped.values().stream()
                 .filter(query -> !query.query().isBlank())
+                .sorted(Comparator.comparing(GeneratedQuery::confidence).reversed())
                 .limit(properties.maxQueries())
                 .toList();
         return new QueryExpansionResult(
