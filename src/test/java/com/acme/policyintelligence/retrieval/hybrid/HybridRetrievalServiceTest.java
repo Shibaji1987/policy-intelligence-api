@@ -140,7 +140,7 @@ class HybridRetrievalServiceTest {
     void passesQueryVariantsToRetrievers() {
         var seenQueries = new ArrayList<String>();
         HybridRetrievalService service = new HybridRetrievalService(
-                new VectorRetrievalService(null, null) {
+                new VectorRetrievalService(null, null, new SimpleMeterRegistry()) {
                     @Override
                     public List<RetrievedChunk> retrieve(String query, int topK, RetrievalFilters filters) {
                         seenQueries.add(query);
@@ -188,7 +188,7 @@ class HybridRetrievalServiceTest {
     }
 
     private VectorRetrievalService vectorService(List<RetrievedChunk> chunks) {
-        return new VectorRetrievalService(null, null) {
+        return new VectorRetrievalService(null, null, new SimpleMeterRegistry()) {
             @Override
             public List<RetrievedChunk> retrieve(String query, int topK, RetrievalFilters filters) {
                 return chunks;
@@ -197,7 +197,7 @@ class HybridRetrievalServiceTest {
     }
 
     private VectorRetrievalService failingVectorService() {
-        return new VectorRetrievalService(null, null) {
+        return new VectorRetrievalService(null, null, new SimpleMeterRegistry()) {
             @Override
             public List<RetrievedChunk> retrieve(String query, int topK, RetrievalFilters filters) {
                 throw new IllegalStateException("vector unavailable");
