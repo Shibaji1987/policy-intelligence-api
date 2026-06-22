@@ -6,6 +6,9 @@ public record GoldenQuestion(
         String id,
         String question,
         List<String> expectedSourceHints,
-        String expectedAnswerHint
+        String expectedAnswerHint,
+        List<String> expectedChunkIds,
+        List<String> expectedAnswerKeywords,
+        List<String> expectedDocumentIds
 ) {
 }

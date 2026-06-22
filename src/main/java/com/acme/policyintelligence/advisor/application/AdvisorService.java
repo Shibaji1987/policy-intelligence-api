@@ -1,13 +1,17 @@
 package com.acme.policyintelligence.advisor.application;
 
 import com.acme.policyintelligence.context.application.ContextManager;
+import com.acme.policyintelligence.advisor.queryexpansion.QueryExpansionRequest;
+import com.acme.policyintelligence.advisor.queryexpansion.QueryExpansionService;
+import com.acme.policyintelligence.advisor.queryrewrite.QueryRewriteRequest;
+import com.acme.policyintelligence.advisor.queryrewrite.QueryRewriteService;
 import com.acme.policyintelligence.ml.application.RetrievalQualityFeatures;
 import com.acme.policyintelligence.ml.application.RetrievalQualityPredictor;
 import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
-import com.acme.policyintelligence.retrieval.application.RetrievalReranker;
-import com.acme.policyintelligence.retrieval.application.RetrievalSearchService;
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
+import com.acme.policyintelligence.retrieval.hybrid.HybridRetrievalService;
 import com.acme.policyintelligence.retrieval.infrastructure.VectorSearchRepository;
+import com.acme.policyintelligence.retrieval.rerank.Reranker;
 import com.acme.policyintelligence.trace.application.RetrievalTraceTimings;
 import com.acme.policyintelligence.trace.infrastructure.RetrievalTraceRepository;
 import org.slf4j.Logger;
@@ -28,10 +32,11 @@ public class AdvisorService {
     private static final int ADVISOR_RERANKED_LIMIT = 20;
     private static final int PARENT_CHILD_SEED_LIMIT = 8;
 
-    private final QueryRefiner queryRefiner;
-    private final RetrievalSearchService retrievalSearchService;
+    private final QueryRewriteService queryRewriteService;
+    private final QueryExpansionService queryExpansionService;
+    private final HybridRetrievalService hybridRetrievalService;
     private final ContextManager contextManager;
-    private final RetrievalReranker retrievalReranker;
+    private final Reranker reranker;
     private final VectorSearchRepository vectorSearchRepository;
     private final AnswerGenerator answerGenerator;
     private final AnswerVerifier answerVerifier;
@@ -39,20 +44,22 @@ public class AdvisorService {
     private final RetrievalTraceRepository traceRepository;
 
     public AdvisorService(
-            QueryRefiner queryRefiner,
-            RetrievalSearchService retrievalSearchService,
+            QueryRewriteService queryRewriteService,
+            QueryExpansionService queryExpansionService,
+            HybridRetrievalService hybridRetrievalService,
             ContextManager contextManager,
-            RetrievalReranker retrievalReranker,
+            Reranker reranker,
             VectorSearchRepository vectorSearchRepository,
             AnswerGenerator answerGenerator,
             AnswerVerifier answerVerifier,
             RetrievalQualityPredictor qualityPredictor,
             RetrievalTraceRepository traceRepository
     ) {
-        this.queryRefiner = queryRefiner;
-        this.retrievalSearchService = retrievalSearchService;
+        this.queryRewriteService = queryRewriteService;
+        this.queryExpansionService = queryExpansionService;
+        this.hybridRetrievalService = hybridRetrievalService;
         this.contextManager = contextManager;
-        this.retrievalReranker = retrievalReranker;
+        this.reranker = reranker;
         this.vectorSearchRepository = vectorSearchRepository;
         this.answerGenerator = answerGenerator;
         this.answerVerifier = answerVerifier;
@@ -79,48 +86,51 @@ public class AdvisorService {
             Instant requestStarted = Instant.now();
             LOGGER.info("Advisor request started. questionLength={}, retrievalTopK={}", question.length(), ADVISOR_RETRIEVAL_TOP_K);
             sink.emit(AdvisorEvent.of(AdvisorStage.QUESTION_RECEIVED, "Question received"));
-            QueryPlan queryPlan = queryRefiner.plan(question);
-            String refinedQuery = queryPlan.refinedQuery();
+            var rewrite = queryRewriteService.rewrite(new QueryRewriteRequest(question));
+            String refinedQuery = rewrite.rewrittenQuery();
+            var expansion = queryExpansionService.expand(new QueryExpansionRequest(refinedQuery));
+            List<String> retrievalQueries = expansion.generatedQueries().stream()
+                    .map(generated -> generated.query())
+                    .toList();
             sink.emit(AdvisorEvent.of(AdvisorStage.QUERY_REFINED, "Query refined", Map.of(
                     "query", refinedQuery,
-                    "retrievalQueries", queryPlan.retrievalQueries()
+                    "rewriteStrategy", rewrite.rewriteStrategy(),
+                    "rewriteLatencyMs", rewrite.latencyMs(),
+                    "retrievalQueries", retrievalQueries
             )));
 
             sink.emit(AdvisorEvent.of(AdvisorStage.VECTOR_SEARCH_STARTED, "Vector search started"));
             Instant retrievalStarted = Instant.now();
-            var retrievals = queryPlan.retrievalQueries().stream()
-                    .map(query -> retrievalSearchService.search(query, ADVISOR_RETRIEVAL_TOP_K, filters))
+            var retrievals = retrievalQueries.stream()
+                    .map(query -> hybridRetrievalService.search(query, ADVISOR_RETRIEVAL_TOP_K, filters))
                     .toList();
             long retrievalLatencyMs = elapsedMs(retrievalStarted);
             List<RetrievedChunk> retrieved = mergeRetrieved(retrievals.stream()
-                    .flatMap(response -> response.chunks().stream())
+                    .flatMap(response -> response.fusedResults().stream())
                     .toList());
             var neighbors = vectorSearchRepository.findActiveNeighbors(retrieved.stream().limit(PARENT_CHILD_SEED_LIMIT).toList());
-            retrieved = retrievalReranker.rerank(question, mergeRetrieved(List.copyOf(concat(retrieved, neighbors))), ADVISOR_RERANKED_LIMIT);
-            var firstRetrieval = retrievals.isEmpty() ? null : retrievals.getFirst();
+            retrieved = reranker.rerank(question, mergeRetrieved(List.copyOf(concat(retrieved, neighbors)))).stream()
+                    .limit(ADVISOR_RERANKED_LIMIT)
+                    .map(reranked -> reranked.toRetrievedChunk())
+                    .toList();
             LOGGER.info(
-                    "Advisor retrieval completed. plannedQueries={}, retrievedChunks={}, cacheHit={}, embeddingModel={}, embeddingDimension={}",
-                    queryPlan.retrievalQueries().size(),
-                    retrieved.size(),
-                    firstRetrieval != null && firstRetrieval.cacheHit(),
-                    firstRetrieval == null ? "unknown" : firstRetrieval.embeddingModel(),
-                    firstRetrieval == null ? 0 : firstRetrieval.embeddingDimension()
+                    "Advisor retrieval completed. plannedQueries={}, retrievedChunks={}",
+                    retrievalQueries.size(),
+                    retrieved.size()
             );
             sink.emit(AdvisorEvent.of(
                     AdvisorStage.CHUNKS_RETRIEVED,
                     "Chunks retrieved",
                     Map.of(
                             "count", retrieved.size(),
-                            "plannedQueries", queryPlan.retrievalQueries().size(),
-                            "cacheHit", firstRetrieval != null && firstRetrieval.cacheHit(),
-                            "corpusVersion", firstRetrieval == null ? 0 : firstRetrieval.corpusVersion(),
+                            "plannedQueries", retrievalQueries.size(),
                             "latencyMs", retrievalLatencyMs
                     )
             ));
 
             sink.emit(AdvisorEvent.of(AdvisorStage.CONTEXT_FILTERING_STARTED, "Context filtering started"));
             Instant contextStarted = Instant.now();
-            var context = contextManager.build(retrieved);
+            var context = contextManager.build(question, retrieved);
             long contextLatencyMs = elapsedMs(contextStarted);
             LOGGER.info(
                     "Advisor context built. usedChunks={}, discardedChunks={}, estimatedTokens={}, documentDiversity={}",
@@ -177,8 +187,8 @@ public class AdvisorService {
                     context.decisions(),
                     context.metrics(),
                     prediction,
-                    firstRetrieval == null ? 0 : firstRetrieval.corpusVersion(),
-                    firstRetrieval != null && firstRetrieval.cacheHit(),
+                    0,
+                    false,
                     new RetrievalTraceTimings(
                             retrievalLatencyMs,
                             contextLatencyMs,
@@ -188,7 +198,9 @@ public class AdvisorService {
                     ),
                     answerGenerator.name(),
                     "HYBRID_MULTI_QUERY_RERANKED",
-                    String.join(" || ", queryPlan.retrievalQueries()),
+                    String.join(" || ", retrievalQueries),
+                    rewrite.latencyMs(),
+                    rewrite.status(),
                     verification.verified(),
                     verification.reason()
             );

@@ -1,6 +1,9 @@
 package com.acme.policyintelligence.context.application;
 
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
+import com.acme.policyintelligence.context.compression.CompressedChunk;
+import com.acme.policyintelligence.context.compression.ContextCompressionService;
+import com.acme.policyintelligence.context.packing.ContextPackingService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -9,7 +12,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ContextManager {
@@ -17,18 +22,31 @@ public class ContextManager {
     private final int maxChunks;
     private final int tokenBudget;
     private final int maxChunksPerDocument;
+    private final ContextCompressionService compressionService;
+    private final ContextPackingService packingService;
 
     public ContextManager(
             @Value("${app.advisor.max-context-chunks:8}") int maxChunks,
             @Value("${app.advisor.context-token-budget:1800}") int tokenBudget,
-            @Value("${app.advisor.max-chunks-per-document:3}") int maxChunksPerDocument
+            @Value("${app.advisor.max-chunks-per-document:3}") int maxChunksPerDocument,
+            ContextCompressionService compressionService,
+            ContextPackingService packingService
     ) {
         this.maxChunks = maxChunks;
         this.tokenBudget = tokenBudget;
         this.maxChunksPerDocument = maxChunksPerDocument;
+        this.compressionService = compressionService;
+        this.packingService = packingService;
     }
 
     public BuiltContext build(List<RetrievedChunk> retrievedChunks) {
+        return build("", retrievedChunks);
+    }
+
+    public BuiltContext build(String question, List<RetrievedChunk> retrievedChunks) {
+        var compressedContext = compressionService.compress(question, retrievedChunks);
+        Map<java.util.UUID, CompressedChunk> compressedByChunk = compressedContext.chunks().stream()
+                .collect(Collectors.toMap(chunk -> chunk.source().chunkId(), chunk -> chunk));
         var used = new ArrayList<RetrievedChunk>();
         var discarded = new ArrayList<RetrievedChunk>();
         var decisions = new ArrayList<ContextChunkDecision>();
@@ -44,7 +62,9 @@ public class ContextManager {
         int maxChunkDiscarded = 0;
 
         for (RetrievedChunk chunk : retrievedChunks) {
-            int chunkTokens = estimateTokens(chunk.chunkText());
+            CompressedChunk compressed = compressedByChunk.get(chunk.chunkId());
+            int originalTokens = compressed == null ? estimateTokens(chunk.chunkText()) : compressed.originalTokenCount();
+            int chunkTokens = compressed == null ? estimateTokens(chunk.chunkText()) : compressed.compressedTokenCount();
             String fingerprint = fingerprint(chunk.chunkText());
             Set<String> tokenSet = tokenSet(chunk.chunkText());
             boolean duplicate = !fingerprints.add(fingerprint);
@@ -73,7 +93,17 @@ public class ContextManager {
                     documentQuotaDiscarded++;
                     reason = "DOCUMENT_DIVERSITY_QUOTA";
                 }
-                decisions.add(new ContextChunkDecision(chunk, false, null, reason, chunkTokens));
+                decisions.add(new ContextChunkDecision(
+                        chunk,
+                        false,
+                        null,
+                        reason,
+                        chunkTokens,
+                        originalTokens,
+                        chunkTokens,
+                        compressed == null ? 1 : compressed.compressionRatio(),
+                        compressed == null ? "NONE" : compressed.compressionMethod()
+                ));
                 continue;
             }
 
@@ -82,10 +112,24 @@ public class ContextManager {
             documents.add(documentKey);
             documentCounts.merge(documentKey, 1, Integer::sum);
             estimatedTokens += chunkTokens;
-            decisions.add(new ContextChunkDecision(chunk, true, used.size(), "USED", chunkTokens));
+            decisions.add(new ContextChunkDecision(
+                    chunk,
+                    true,
+                    used.size(),
+                    "USED",
+                    chunkTokens,
+                    originalTokens,
+                    chunkTokens,
+                    compressed == null ? 1 : compressed.compressionRatio(),
+                    compressed == null ? "NONE" : compressed.compressionMethod()
+            ));
         }
 
-        String contextText = formatContext(used);
+        var packed = packingService.pack(used.stream()
+                .map(chunk -> compressedByChunk.get(chunk.chunkId()))
+                .filter(java.util.Objects::nonNull)
+                .toList());
+        String contextText = formatContext(packed.orderedChunks());
         var metrics = new ContextMetrics(
                 retrievedChunks.size(),
                 used.size(),
@@ -101,10 +145,11 @@ public class ContextManager {
         return new BuiltContext(contextText, metrics, List.copyOf(used), List.copyOf(discarded), List.copyOf(decisions));
     }
 
-    private String formatContext(List<RetrievedChunk> chunks) {
+    private String formatContext(List<CompressedChunk> chunks) {
         var builder = new StringBuilder();
         for (int index = 0; index < chunks.size(); index++) {
-            var chunk = chunks.get(index);
+            var compressed = chunks.get(index);
+            var chunk = compressed.source();
             builder.append("[Source ").append(index + 1).append("] ")
                     .append(chunk.documentTitle())
                     .append(" v").append(chunk.version())
@@ -113,8 +158,9 @@ public class ContextManager {
                     .append(" chunkId=").append(chunk.chunkId())
                     .append(" parentSectionId=").append(chunk.parentSectionId())
                     .append(" similarity=").append(String.format(Locale.ROOT, "%.4f", chunk.similarityScore()))
+                    .append(" compressedRatio=").append(String.format(Locale.ROOT, "%.2f", compressed.compressionRatio()))
                     .append(System.lineSeparator())
-                    .append(chunk.chunkText())
+                    .append(compressed.compressedText())
                     .append(System.lineSeparator())
                     .append(System.lineSeparator());
         }

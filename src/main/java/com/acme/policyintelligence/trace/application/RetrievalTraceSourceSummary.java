@@ -21,6 +21,18 @@ public record RetrievalTraceSourceSummary(
         int tokenEstimate,
         double keywordScore,
         double combinedScore,
-        String retrievalStrategy
+        String retrievalStrategy,
+        Integer vectorRank,
+        Integer keywordRank,
+        double vectorScore,
+        double rrfScore,
+        String retrievalSource,
+        Integer rerankRank,
+        double rerankScore,
+        String rerankReason,
+        int originalTokenCount,
+        int compressedTokenCount,
+        double compressionRatio,
+        String compressionMethod
 ) {
 }

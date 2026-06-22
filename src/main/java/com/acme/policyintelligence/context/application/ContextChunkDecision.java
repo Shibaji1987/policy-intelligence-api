@@ -7,6 +7,10 @@ public record ContextChunkDecision(
         boolean used,
         Integer contextRank,
         String reason,
-        int tokenEstimate
+        int tokenEstimate,
+        int originalTokenCount,
+        int compressedTokenCount,
+        double compressionRatio,
+        String compressionMethod
 ) {
 }

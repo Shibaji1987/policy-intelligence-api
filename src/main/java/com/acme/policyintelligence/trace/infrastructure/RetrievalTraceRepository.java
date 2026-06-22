@@ -43,6 +43,8 @@ public class RetrievalTraceRepository {
             String answerGenerator,
             String retrievalStrategy,
             String queryPlan,
+            long queryRewriteLatencyMs,
+            String queryRewriteStatus,
             boolean answerVerified,
             String answerVerificationReason
     ) {
@@ -55,9 +57,11 @@ public class RetrievalTraceRepository {
                             avg_top5_similarity, document_diversity, ml_label, ml_probability,
                             corpus_version, cache_hit, retrieval_latency_ms, context_build_latency_ms,
                             llm_latency_ms, ml_latency_ms, total_latency_ms, answer_generator,
-                            retrieval_strategy, query_plan, answer_verified, answer_verification_reason, created_at
+                            retrieval_strategy, query_plan, original_question, rewritten_query,
+                            query_rewrite_latency_ms, query_rewrite_status, generated_queries,
+                            answer_verified, answer_verification_reason, created_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 traceId,
                 question,
@@ -82,6 +86,11 @@ public class RetrievalTraceRepository {
                 answerGenerator,
                 retrievalStrategy,
                 queryPlan,
+                question,
+                refinedQuery,
+                queryRewriteLatencyMs,
+                queryRewriteStatus,
+                queryPlan,
                 answerVerified,
                 answerVerificationReason,
                 Timestamp.from(Instant.now())
@@ -102,9 +111,12 @@ public class RetrievalTraceRepository {
                                 chunk_id, chunk_index, similarity_score, excerpt, used_in_context,
                                 source_rank, context_rank, discard_reason, token_estimate,
                                 keyword_score, combined_score, retrieval_strategy,
-                                parent_section_id, parent_section_title
+                                parent_section_id, parent_section_title,
+                                vector_rank, keyword_rank, vector_score, rrf_score, retrieval_source,
+                                rerank_rank, rerank_score, rerank_reason,
+                                original_token_count, compressed_token_count, compression_ratio, compression_method
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     UUID.randomUUID(),
                     traceId,
@@ -125,7 +137,19 @@ public class RetrievalTraceRepository {
                     chunk.combinedScore(),
                     chunk.retrievalStrategy(),
                     chunk.parentSectionId(),
-                    chunk.parentSectionTitle()
+                    chunk.parentSectionTitle(),
+                    chunk.vectorRank(),
+                    chunk.keywordRank(),
+                    chunk.similarityScore(),
+                    chunk.rrfScore(),
+                    chunk.retrievalSource(),
+                    chunk.rerankRank(),
+                    chunk.rerankScore(),
+                    chunk.rerankReason(),
+                    decision == null ? 0 : decision.originalTokenCount(),
+                    decision == null ? 0 : decision.compressedTokenCount(),
+                    decision == null ? 1 : decision.compressionRatio(),
+                    decision == null ? "NONE" : decision.compressionMethod()
             );
         }
         return traceId;
@@ -184,7 +208,19 @@ public class RetrievalTraceRepository {
                         rs.getInt("token_estimate"),
                         rs.getDouble("keyword_score"),
                         rs.getDouble("combined_score"),
-                        rs.getString("retrieval_strategy")
+                        rs.getString("retrieval_strategy"),
+                        (Integer) rs.getObject("vector_rank"),
+                        (Integer) rs.getObject("keyword_rank"),
+                        rs.getDouble("vector_score"),
+                        rs.getDouble("rrf_score"),
+                        rs.getString("retrieval_source"),
+                        (Integer) rs.getObject("rerank_rank"),
+                        rs.getDouble("rerank_score"),
+                        rs.getString("rerank_reason"),
+                        rs.getInt("original_token_count"),
+                        rs.getInt("compressed_token_count"),
+                        rs.getDouble("compression_ratio"),
+                        rs.getString("compression_method")
                 ),
                 traceId
         );
