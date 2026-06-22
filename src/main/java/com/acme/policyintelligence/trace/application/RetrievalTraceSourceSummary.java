@@ -30,6 +30,7 @@ public record RetrievalTraceSourceSummary(
         Integer rerankRank,
         double rerankScore,
         String rerankReason,
+        String matchedQueryVariant,
         int originalTokenCount,
         int compressedTokenCount,
         double compressionRatio,

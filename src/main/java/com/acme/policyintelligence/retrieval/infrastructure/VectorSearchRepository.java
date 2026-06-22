@@ -86,6 +86,7 @@ public class VectorSearchRepository {
                             null,
                             0,
                             null,
+                            query,
                             "HYBRID",
                             excerpt(chunkText)
                     );
@@ -157,6 +158,7 @@ public class VectorSearchRepository {
                             null,
                             0,
                             null,
+                            query,
                             "KEYWORD",
                             excerpt(chunkText)
                     );
@@ -232,6 +234,7 @@ public class VectorSearchRepository {
                             seed.rerankRank(),
                             seed.rerankScore() * 0.92,
                             "Neighbor chunk expanded from high-ranking parent section",
+                            seed.matchedQueryVariant(),
                             "PARENT_CHILD_NEIGHBOR",
                             excerpt(chunkText)
                     );

@@ -22,6 +22,7 @@ public record RetrievedChunk(
         Integer rerankRank,
         double rerankScore,
         String rerankReason,
+        String matchedQueryVariant,
         String retrievalStrategy,
         String excerpt
 ) {
@@ -46,6 +47,7 @@ public record RetrievedChunk(
                 rerankRank,
                 rerankScore,
                 rerankReason,
+                matchedQueryVariant,
                 retrievalStrategy,
                 excerpt
         );
@@ -72,6 +74,34 @@ public record RetrievedChunk(
                 newRerankRank,
                 newRerankScore,
                 newRerankReason,
+                matchedQueryVariant,
+                retrievalStrategy,
+                excerpt
+        );
+    }
+
+    public RetrievedChunk withMatchedQueryVariant(String queryVariant) {
+        return new RetrievedChunk(
+                documentId,
+                documentTitle,
+                versionId,
+                version,
+                chunkId,
+                chunkIndex,
+                parentSectionId,
+                parentSectionTitle,
+                chunkText,
+                similarityScore,
+                keywordScore,
+                combinedScore,
+                vectorRank,
+                keywordRank,
+                rrfScore,
+                retrievalSource,
+                rerankRank,
+                rerankScore,
+                rerankReason,
+                queryVariant,
                 retrievalStrategy,
                 excerpt
         );

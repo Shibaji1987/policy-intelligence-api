@@ -107,13 +107,9 @@ public class AdvisorService {
 
             sink.emit(AdvisorEvent.of(AdvisorStage.VECTOR_SEARCH_STARTED, "Vector search started"));
             Instant retrievalStarted = Instant.now();
-            var retrievals = retrievalQueries.stream()
-                    .map(query -> hybridRetrievalService.search(query, ADVISOR_RETRIEVAL_TOP_K, filters))
-                    .toList();
+            var retrieval = hybridRetrievalService.search(question, refinedQuery, retrievalQueries, ADVISOR_RETRIEVAL_TOP_K, filters);
             long retrievalLatencyMs = elapsedMs(retrievalStarted);
-            List<RetrievedChunk> retrieved = mergeRetrieved(retrievals.stream()
-                    .flatMap(response -> response.fusedResults().stream())
-                    .toList());
+            List<RetrievedChunk> retrieved = mergeRetrieved(retrieval.fusedResults());
             var neighbors = vectorSearchRepository.findActiveNeighbors(retrieved.stream().limit(PARENT_CHILD_SEED_LIMIT).toList());
             retrieved = reranker.rerank(question, mergeRetrieved(List.copyOf(concat(retrieved, neighbors)))).stream()
                     .limit(ADVISOR_RERANKED_LIMIT)
@@ -121,7 +117,7 @@ public class AdvisorService {
                     .toList();
             LOGGER.info(
                     "Advisor retrieval completed. plannedQueries={}, retrievedChunks={}",
-                    retrievalQueries.size(),
+                    retrieval.expandedQueries().size(),
                     retrieved.size()
             );
             sink.emit(AdvisorEvent.of(
@@ -129,8 +125,11 @@ public class AdvisorService {
                     "Chunks retrieved",
                     Map.of(
                             "count", retrieved.size(),
-                            "plannedQueries", retrievalQueries.size(),
-                            "latencyMs", retrievalLatencyMs
+                            "plannedQueries", retrieval.expandedQueries().size(),
+                            "latencyMs", retrievalLatencyMs,
+                            "retrievalStatus", retrieval.status(),
+                            "retrievalStrategy", retrieval.retrievalStrategy(),
+                            "queryId", retrieval.queryId()
                     )
             ));
 

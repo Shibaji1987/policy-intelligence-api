@@ -3,9 +3,17 @@ package com.acme.policyintelligence.retrieval.hybrid;
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
 
 import java.util.List;
+import java.util.UUID;
 
 public record HybridSearchResult(
+        UUID queryId,
+        String originalQuery,
+        String rewrittenQuery,
+        List<String> expandedQueries,
         String query,
+        RetrieverExecutionResult vectorResult,
+        RetrieverExecutionResult keywordResult,
+        com.acme.policyintelligence.retrieval.fusion.FusionResult fusionResult,
         List<RetrievedChunk> vectorResults,
         List<RetrievedChunk> keywordResults,
         List<RetrievedChunk> fusedResults,
@@ -18,6 +26,7 @@ public record HybridSearchResult(
         String vectorError,
         String keywordError,
         int requestedTopK,
-        int effectiveTopK
+        int effectiveTopK,
+        HybridRetrievalTrace trace
 ) {
 }

@@ -114,10 +114,11 @@ public class RetrievalTraceRepository {
                                 parent_section_id, parent_section_title,
                                 vector_rank, keyword_rank, vector_score, rrf_score, retrieval_source,
                                 rerank_rank, rerank_score, rerank_reason,
+                                matched_query_variant,
                                 original_token_count, compressed_token_count, compression_ratio, compression_method,
                                 original_text, compressed_text
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     UUID.randomUUID(),
                     traceId,
@@ -147,6 +148,7 @@ public class RetrievalTraceRepository {
                     chunk.rerankRank(),
                     chunk.rerankScore(),
                     chunk.rerankReason(),
+                    chunk.matchedQueryVariant(),
                     decision == null ? 0 : decision.originalTokenCount(),
                     decision == null ? 0 : decision.compressedTokenCount(),
                     decision == null ? 1 : decision.compressionRatio(),
@@ -220,6 +222,7 @@ public class RetrievalTraceRepository {
                         (Integer) rs.getObject("rerank_rank"),
                         rs.getDouble("rerank_score"),
                         rs.getString("rerank_reason"),
+                        rs.getString("matched_query_variant"),
                         rs.getInt("original_token_count"),
                         rs.getInt("compressed_token_count"),
                         rs.getDouble("compression_ratio"),
