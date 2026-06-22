@@ -206,7 +206,7 @@ class HybridRetrievalServiceTest {
     }
 
     private KeywordRetrievalService keywordService(List<RetrievedChunk> chunks) {
-        return new KeywordRetrievalService(null) {
+        return new KeywordRetrievalService(null, new SimpleMeterRegistry()) {
             @Override
             public List<RetrievedChunk> retrieve(String query, int topK, RetrievalFilters filters) {
                 return chunks;
@@ -215,7 +215,7 @@ class HybridRetrievalServiceTest {
     }
 
     private KeywordRetrievalService failingKeywordService() {
-        return new KeywordRetrievalService(null) {
+        return new KeywordRetrievalService(null, new SimpleMeterRegistry()) {
             @Override
             public List<RetrievedChunk> retrieve(String query, int topK, RetrievalFilters filters) {
                 throw new IllegalStateException("keyword unavailable");
