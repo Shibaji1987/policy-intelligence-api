@@ -44,7 +44,7 @@ public class VectorSearchRepository {
                                 ('Section ' || (FLOOR(chunk.chunk_index / 5.0)::int + 1)) AS parent_section_title,
                                 chunk.chunk_text,
                                 1 - (chunk.embedding <=> ?::vector) AS similarity_score,
-                                ts_rank_cd(to_tsvector('english', chunk.chunk_text), plainto_tsquery('english', ?)) AS keyword_score
+                                ts_rank_cd(chunk.search_vector, plainto_tsquery('english', ?)) AS keyword_score
                             FROM document_chunk chunk
                             JOIN document document ON document.id = chunk.document_id
                             JOIN document_version version ON version.id = chunk.version_id
@@ -119,7 +119,7 @@ public class VectorSearchRepository {
                             ('Section ' || (FLOOR(chunk.chunk_index / 5.0)::int + 1)) AS parent_section_title,
                             chunk.chunk_text,
                             0.0 AS similarity_score,
-                            ts_rank_cd(to_tsvector('english', chunk.chunk_text), plainto_tsquery('english', ?)) AS keyword_score
+                            ts_rank_cd(chunk.search_vector, plainto_tsquery('english', ?)) AS keyword_score
                         FROM document_chunk chunk
                         JOIN document document ON document.id = chunk.document_id
                         JOIN document_version version ON version.id = chunk.version_id
@@ -130,7 +130,7 @@ public class VectorSearchRepository {
                           AND (? IS NULL OR document.region = ?)
                           AND (? IS NULL OR document.document_type = ?)
                           AND (? IS NULL OR document.classification = ?)
-                          AND to_tsvector('english', chunk.chunk_text) @@ plainto_tsquery('english', ?)
+                          AND chunk.search_vector @@ plainto_tsquery('english', ?)
                         ORDER BY keyword_score DESC
                         LIMIT ?
                         """,

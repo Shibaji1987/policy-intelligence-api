@@ -85,13 +85,13 @@ public class ContextManager {
                     reason = "NEAR_DUPLICATE";
                 } else if (overBudget) {
                     tokenBudgetDiscarded++;
-                    reason = "TOKEN_BUDGET";
+                    reason = "TOKEN_BUDGET_EXCEEDED";
                 } else if (tooMany) {
                     maxChunkDiscarded++;
-                    reason = "MAX_CONTEXT_CHUNKS";
+                    reason = "LOW_RANK";
                 } else {
                     documentQuotaDiscarded++;
-                    reason = "DOCUMENT_DIVERSITY_QUOTA";
+                    reason = "DOCUMENT_DIVERSITY_LIMIT";
                 }
                 decisions.add(new ContextChunkDecision(
                         chunk,
@@ -102,7 +102,9 @@ public class ContextManager {
                         originalTokens,
                         chunkTokens,
                         compressed == null ? 1 : compressed.compressionRatio(),
-                        compressed == null ? "NONE" : compressed.compressionMethod()
+                        compressed == null ? "NONE" : compressed.compressionMethod(),
+                        compressed == null ? chunk.chunkText() : compressed.originalText(),
+                        compressed == null ? chunk.chunkText() : compressed.compressedText()
                 ));
                 continue;
             }
@@ -121,7 +123,9 @@ public class ContextManager {
                     originalTokens,
                     chunkTokens,
                     compressed == null ? 1 : compressed.compressionRatio(),
-                    compressed == null ? "NONE" : compressed.compressionMethod()
+                    compressed == null ? "NONE" : compressed.compressionMethod(),
+                    compressed == null ? chunk.chunkText() : compressed.originalText(),
+                    compressed == null ? chunk.chunkText() : compressed.compressedText()
             ));
         }
 

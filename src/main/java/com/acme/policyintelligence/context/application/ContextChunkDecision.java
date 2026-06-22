@@ -11,6 +11,8 @@ public record ContextChunkDecision(
         int originalTokenCount,
         int compressedTokenCount,
         double compressionRatio,
-        String compressionMethod
+        String compressionMethod,
+        String originalText,
+        String compressedText
 ) {
 }
