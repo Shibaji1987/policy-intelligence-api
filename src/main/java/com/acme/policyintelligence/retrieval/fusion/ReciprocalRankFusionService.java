@@ -1,6 +1,8 @@
 package com.acme.policyintelligence.retrieval.fusion;
 
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
+import com.acme.policyintelligence.retrieval.hybrid.RetrievalSource;
+import com.acme.policyintelligence.retrieval.hybrid.RetrieverExecutionResult;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -12,6 +14,18 @@ import java.util.UUID;
 public class ReciprocalRankFusionService {
 
     private static final int RRF_K = 60;
+
+    public FusionResult fuse(List<RetrieverExecutionResult> outcomes, int limit) {
+        List<RetrievedChunk> vectorResults = outcomes.stream()
+                .filter(outcome -> outcome.source() == RetrievalSource.VECTOR)
+                .flatMap(outcome -> outcome.results().stream())
+                .toList();
+        List<RetrievedChunk> keywordResults = outcomes.stream()
+                .filter(outcome -> outcome.source() == RetrievalSource.KEYWORD)
+                .flatMap(outcome -> outcome.results().stream())
+                .toList();
+        return fuse(vectorResults, keywordResults, limit);
+    }
 
     public FusionResult fuse(List<RetrievedChunk> vectorResults, List<RetrievedChunk> keywordResults, int limit) {
         var candidates = new LinkedHashMap<UUID, FusionCandidate>();

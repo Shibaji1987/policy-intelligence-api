@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record HybridRetrievalTrace(
         UUID queryId,
+        String queryHash,
         String retrievalMode,
         String fusionStrategy,
         String retrievalStrategy,

@@ -3,6 +3,7 @@ package com.acme.policyintelligence.retrieval.hybrid;
 import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
 import com.acme.policyintelligence.retrieval.fusion.ReciprocalRankFusionService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -19,7 +20,8 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of(chunk("vector"))),
                 keywordService(List.of(chunk("keyword"))),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         HybridSearchResult result = service.search("contractor access", 10, RetrievalFilters.defaults());
@@ -28,6 +30,7 @@ class HybridRetrievalServiceTest {
         assertThat(result.trace().vectorStatus()).isEqualTo("SUCCESS");
         assertThat(result.trace().keywordStatus()).isEqualTo("SUCCESS");
         assertThat(result.trace().fusionStrategy()).isEqualTo("RRF");
+        assertThat(result.trace().queryHash()).isNotBlank();
         assertThat(result.trace().filtersApplied()).containsEntry("tenantId", "default");
         assertThat(result.trace().topKReturned()).isEqualTo(result.fusedResults().size());
     }
@@ -37,7 +40,8 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 failingVectorService(),
                 keywordService(List.of(chunk("keyword"))),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         HybridSearchResult result = service.search("contractor access", 10, RetrievalFilters.defaults());
@@ -57,7 +61,8 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of(chunk("vector"))),
                 failingKeywordService(),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         HybridSearchResult result = service.search("contractor access", 10, RetrievalFilters.defaults());
@@ -73,7 +78,8 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 failingVectorService(),
                 failingKeywordService(),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         HybridSearchResult result = service.search("contractor access", 10, RetrievalFilters.defaults());
@@ -89,7 +95,8 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of()),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         HybridSearchResult result = service.search("contractor access", 10, RetrievalFilters.defaults());
@@ -105,7 +112,8 @@ class HybridRetrievalServiceTest {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of()),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         assertThatThrownBy(() -> service.search(" ", 10, RetrievalFilters.defaults()))
@@ -114,14 +122,17 @@ class HybridRetrievalServiceTest {
     }
 
     @Test
-    void validatesTopKBounds() {
+    void rejectsNonPositiveTopKAndClampsLargeTopK() {
         HybridRetrievalService service = new HybridRetrievalService(
                 vectorService(List.of()),
                 keywordService(List.of()),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
-        assertThat(service.search("policy", 0, RetrievalFilters.defaults()).effectiveTopK()).isEqualTo(20);
+        assertThatThrownBy(() -> service.search("policy", 0, RetrievalFilters.defaults()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("topK must be positive");
         assertThat(service.search("policy", 500, RetrievalFilters.defaults()).effectiveTopK()).isEqualTo(100);
     }
 
@@ -137,7 +148,8 @@ class HybridRetrievalServiceTest {
                     }
                 },
                 keywordService(List.of()),
-                new ReciprocalRankFusionService()
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
         );
 
         HybridSearchResult result = service.search("original", "rewritten", List.of("q1", "q2"), 10, RetrievalFilters.defaults());
@@ -145,6 +157,34 @@ class HybridRetrievalServiceTest {
         assertThat(seenQueries).containsExactly("q1", "q2");
         assertThat(result.expandedQueries()).containsExactly("q1", "q2");
         assertThat(result.fusedResults()).allSatisfy(chunk -> assertThat(chunk.matchedQueryVariant()).isIn("q1", "q2"));
+    }
+
+    @Test
+    void acceptsRequestObjectForEnterpriseRetrievalMetadata() {
+        HybridRetrievalService service = new HybridRetrievalService(
+                vectorService(List.of(chunk("vector"))),
+                keywordService(List.of()),
+                new ReciprocalRankFusionService(),
+                new SimpleMeterRegistry()
+        );
+        var request = new HybridSearchRequest(
+                UUID.randomUUID(),
+                "original",
+                "rewritten",
+                List.of("rewritten", "expanded"),
+                5,
+                new RetrievalFilters("tenant-a", "security", "us", "policy", "internal"),
+                "HYBRID"
+        );
+
+        HybridSearchResult result = service.search(request);
+
+        assertThat(result.queryId()).isEqualTo(request.traceId());
+        assertThat(result.trace().retrievalMode()).isEqualTo("HYBRID");
+        assertThat(result.trace().filtersApplied())
+                .containsEntry("tenantId", "tenant-a")
+                .containsEntry("department", "security");
+        assertThat(result.trace().topKRequested()).isEqualTo(5);
     }
 
     private VectorRetrievalService vectorService(List<RetrievedChunk> chunks) {

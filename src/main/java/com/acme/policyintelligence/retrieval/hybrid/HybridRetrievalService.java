@@ -4,42 +4,50 @@ import com.acme.policyintelligence.retrieval.application.RetrievalFilters;
 import com.acme.policyintelligence.retrieval.application.RetrievedChunk;
 import com.acme.policyintelligence.retrieval.fusion.FusionResult;
 import com.acme.policyintelligence.retrieval.fusion.ReciprocalRankFusionService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 
 @Service
 public class HybridRetrievalService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HybridRetrievalService.class);
-    private static final int DEFAULT_TOP_K = 20;
     private static final int MAX_TOP_K = 100;
 
     private final VectorRetrievalService vectorRetrievalService;
     private final KeywordRetrievalService keywordRetrievalService;
     private final ReciprocalRankFusionService fusionService;
+    private final MeterRegistry meterRegistry;
 
     public HybridRetrievalService(
             VectorRetrievalService vectorRetrievalService,
             KeywordRetrievalService keywordRetrievalService,
-            ReciprocalRankFusionService fusionService
+            ReciprocalRankFusionService fusionService,
+            MeterRegistry meterRegistry
     ) {
         this.vectorRetrievalService = vectorRetrievalService;
         this.keywordRetrievalService = keywordRetrievalService;
         this.fusionService = fusionService;
+        this.meterRegistry = meterRegistry;
     }
 
     public HybridSearchResult search(String query, int topK, RetrievalFilters filters) {
-        return search(query, query, List.of(query), topK, filters);
+        return search(HybridSearchRequest.of(query, query, List.of(query), topK, filters));
     }
 
     public HybridSearchResult search(
@@ -49,12 +57,25 @@ public class HybridRetrievalService {
             int topK,
             RetrievalFilters filters
     ) {
+        return search(HybridSearchRequest.of(originalQuery, rewrittenQuery, expandedQueries, topK, filters));
+    }
+
+    public HybridSearchResult search(HybridSearchRequest request) {
         Instant started = Instant.now();
-        UUID queryId = UUID.randomUUID();
-        String effectiveQuery = validateQuery(firstNonBlank(rewrittenQuery, originalQuery));
-        List<String> queryVariants = validateQueryVariants(expandedQueries, effectiveQuery);
-        int effectiveTopK = validateTopK(topK);
-        RetrievalFilters effectiveFilters = filters == null ? RetrievalFilters.defaults() : filters;
+        UUID queryId = request.traceId();
+        String effectiveQuery = validateQuery(firstNonBlank(request.rewrittenQuery(), request.originalQuery()));
+        String queryHash = queryHash(effectiveQuery);
+        List<String> queryVariants = validateQueryVariants(request.expandedQueries(), effectiveQuery);
+        int effectiveTopK = validateTopK(request.topK());
+        RetrievalFilters effectiveFilters = request.filters();
+
+        LOGGER.info(
+                "Hybrid retrieval started queryId={}, queryHash={}, topK={}, filters={}",
+                queryId,
+                queryHash,
+                effectiveTopK,
+                filtersApplied(effectiveFilters)
+        );
 
         RetrieverExecutionResult vector = safelyRetrieve(
                 RetrievalSource.VECTOR,
@@ -72,25 +93,47 @@ public class HybridRetrievalService {
         );
 
         Instant fusionStarted = Instant.now();
-        FusionResult fusion = fusionService.fuse(vector.results(), keyword.results(), effectiveTopK);
+        FusionResult fusion = fusionService.fuse(List.of(vector, keyword), effectiveTopK);
         long fusionLatencyMs = elapsedMs(fusionStarted);
         long totalLatencyMs = elapsedMs(started);
+        recordMetrics(vector, keyword, fusionLatencyMs, totalLatencyMs);
         HybridRetrievalTrace trace = trace(
                 queryId,
+                queryHash,
+                request.retrievalMode(),
                 vector,
                 keyword,
                 fusion,
                 queryVariants,
-                topK,
+                request.topK(),
                 effectiveTopK,
                 effectiveFilters,
                 fusionLatencyMs,
                 totalLatencyMs
         );
 
+        if (trace.fallbackUsed()) {
+            LOGGER.warn(
+                    "Hybrid retrieval partial failure queryId={}, queryHash={}, vectorStatus={}, keywordStatus={}",
+                    queryId,
+                    queryHash,
+                    vector.status(),
+                    keyword.status()
+            );
+        }
+        if (fusion.results().isEmpty()) {
+            LOGGER.warn(
+                    "Hybrid retrieval empty result queryId={}, queryHash={}, vectorStatus={}, keywordStatus={}",
+                    queryId,
+                    queryHash,
+                    vector.status(),
+                    keyword.status()
+            );
+        }
         LOGGER.info(
-                "Hybrid retrieval completed queryId={}, vectorCount={}, keywordCount={}, fusedCount={}, status={}, strategy={}, latencyMs={}",
+                "Hybrid retrieval completed queryId={}, queryHash={}, vectorCount={}, keywordCount={}, fusedCount={}, status={}, strategy={}, latencyMs={}",
                 queryId,
+                queryHash,
                 vector.resultCount(),
                 keyword.resultCount(),
                 fusion.results().size(),
@@ -101,8 +144,8 @@ public class HybridRetrievalService {
 
         return new HybridSearchResult(
                 queryId,
-                originalQuery,
-                rewrittenQuery,
+                request.originalQuery(),
+                request.rewrittenQuery(),
                 queryVariants,
                 effectiveQuery,
                 vector,
@@ -119,7 +162,7 @@ public class HybridRetrievalService {
                 totalLatencyMs,
                 vector.failureReason(),
                 keyword.failureReason(),
-                topK,
+                request.topK(),
                 effectiveTopK,
                 trace
         );
@@ -152,6 +195,8 @@ public class HybridRetrievalService {
 
     private HybridRetrievalTrace trace(
             UUID queryId,
+            String queryHash,
+            String retrievalMode,
             RetrieverExecutionResult vector,
             RetrieverExecutionResult keyword,
             FusionResult fusion,
@@ -165,7 +210,8 @@ public class HybridRetrievalService {
         List<String> warnings = warnings(vector, keyword, fusion);
         return new HybridRetrievalTrace(
                 queryId,
-                "HYBRID",
+                queryHash,
+                retrievalMode,
                 "RRF",
                 strategy(vector, keyword, fusion),
                 status(vector, keyword),
@@ -232,9 +278,27 @@ public class HybridRetrievalService {
 
     private int validateTopK(int topK) {
         if (topK <= 0) {
-            return DEFAULT_TOP_K;
+            throw new IllegalArgumentException("topK must be positive");
         }
         return Math.min(topK, MAX_TOP_K);
+    }
+
+    private void recordMetrics(
+            RetrieverExecutionResult vector,
+            RetrieverExecutionResult keyword,
+            long fusionLatencyMs,
+            long totalLatencyMs
+    ) {
+        meterRegistry.timer("rag.retrieval.vector.latency").record(vector.latencyMs(), TimeUnit.MILLISECONDS);
+        meterRegistry.timer("rag.retrieval.keyword.latency").record(keyword.latencyMs(), TimeUnit.MILLISECONDS);
+        meterRegistry.timer("rag.retrieval.fusion.latency").record(fusionLatencyMs, TimeUnit.MILLISECONDS);
+        meterRegistry.timer("rag.retrieval.hybrid.latency").record(totalLatencyMs, TimeUnit.MILLISECONDS);
+        if (vector.status() == RetrievalStatus.FAILED || keyword.status() == RetrievalStatus.FAILED) {
+            meterRegistry.counter("rag.retrieval.partial_failure.count").increment();
+        }
+        if (vector.resultCount() == 0 && keyword.resultCount() == 0) {
+            meterRegistry.counter("rag.retrieval.empty_result.count").increment();
+        }
     }
 
     private String strategy(RetrieverExecutionResult vector, RetrieverExecutionResult keyword, FusionResult fusion) {
@@ -283,6 +347,16 @@ public class HybridRetrievalService {
 
     private String safeMessage(RuntimeException exception) {
         return exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
+    }
+
+    private String queryHash(String query) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(query.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash).substring(0, 16);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available", exception);
+        }
     }
 
     private long elapsedMs(Instant started) {
