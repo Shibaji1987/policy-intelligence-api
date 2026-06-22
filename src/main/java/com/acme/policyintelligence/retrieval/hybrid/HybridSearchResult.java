@@ -8,6 +8,16 @@ public record HybridSearchResult(
         String query,
         List<RetrievedChunk> vectorResults,
         List<RetrievedChunk> keywordResults,
-        List<RetrievedChunk> fusedResults
+        List<RetrievedChunk> fusedResults,
+        String retrievalStrategy,
+        String status,
+        long vectorLatencyMs,
+        long keywordLatencyMs,
+        long fusionLatencyMs,
+        long totalLatencyMs,
+        String vectorError,
+        String keywordError,
+        int requestedTopK,
+        int effectiveTopK
 ) {
 }
