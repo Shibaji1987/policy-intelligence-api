@@ -1,21 +1,21 @@
 # Policy Intelligence Platform
 
+[![CI](https://github.com/Shibaji1987/policy-intelligence-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Shibaji1987/policy-intelligence-api/actions/workflows/ci.yml)
+![Java 21](https://img.shields.io/badge/Java-21-007396)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-PGVector-336791)
+
 An enterprise-style RAG platform for ingesting policy documents, chunking them,
 embedding them, retrieving relevant policy context with PGVector cosine search,
 and generating grounded advisor answers with source attribution.
 
 This repository owns the backend API and the local full-stack Docker
-orchestration. The complete project is split into three repos:
+orchestration. The complete project is split into three side-by-side repos:
 
 ```text
-API repo:
-C:\Users\User\Documents\Codex\2026-06-14\files-mentioned-by-the-user-new\policy-intelligence-api
-
-UI repo:
-C:\Users\User\Documents\Codex\2026-06-14\files-mentioned-by-the-user-new\policy-intelligence-ui
-
-ML repo:
-C:\Users\User\Documents\Codex\2026-06-14\files-mentioned-by-the-user-new\policy-intelligence-ml
+policy-intelligence-api
+policy-intelligence-ui
+policy-intelligence-ml
 ```
 
 ## Repos To Clone
@@ -41,13 +41,13 @@ some-parent-folder/
 `-- policy-intelligence-ml/
 ```
 
-Example using this machine's current workspace:
+Example local workspace:
 
 ```text
-C:\Users\User\Documents\Codex\2026-06-14\files-mentioned-by-the-user-new\
-|-- policy-intelligence-api\
-|-- policy-intelligence-ui\
-`-- policy-intelligence-ml\
+policy-intelligence-workspace/
+|-- policy-intelligence-api/
+|-- policy-intelligence-ui/
+`-- policy-intelligence-ml/
 ```
 
 Example clone flow:
@@ -281,7 +281,7 @@ GET  /api/v1/documents/versions/{versionId}/chunks
 ## Module structure
 
 ```text
-com.acme.policyintelligence
+com.shibajide.policyintelligence
 |-- advisor
 |-- chunking
 |-- context
@@ -520,10 +520,10 @@ http://localhost:4200
 
 Upload a PDF, TXT, or Markdown policy document.
 
-For a larger local test PDF, use:
+For a larger local test PDF, use a generated or sample policy file:
 
 ```text
-C:\Users\User\Documents\Codex\2026-06-14\files-mentioned-by-the-user-new\outputs\enterprise-policy-stress-test-600-lines.pdf
+enterprise-policy-stress-test-600-lines.pdf
 ```
 
 Suggested upload settings:

@@ -1,6 +1,0 @@
-package com.acme.policyintelligence.advisor.queryexpansion;
-
-public record QueryExpansionRequest(
-        String baseQuery
-) {
-}
