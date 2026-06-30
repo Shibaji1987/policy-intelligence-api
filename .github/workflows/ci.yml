@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   verify:
@@ -21,6 +22,8 @@ jobs:
           cache: gradle
       - name: Verify
         run: ./gradlew clean check bootJar --no-daemon
+      - name: Docker build
+        run: docker build -t policy-intelligence-api:ci .
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -28,3 +31,13 @@ jobs:
           path: |
             build/reports/
             build/test-results/
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3

@@ -3,7 +3,9 @@ package com.shibajide.policyintelligence.document.application;
 import com.shibajide.policyintelligence.document.infrastructure.DocumentChunkRepository;
 import com.shibajide.policyintelligence.document.infrastructure.DocumentRepository;
 import com.shibajide.policyintelligence.document.infrastructure.DocumentVersionRepository;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,8 +30,8 @@ public class DocumentQueryService {
         this.chunkRepository = chunkRepository;
     }
 
-    public List<DocumentSummary> findDocuments() {
-        return documentRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt")).stream()
+    public Page<DocumentSummary> findDocuments(Pageable pageable) {
+        return documentRepository.findAll(capped(pageable))
                 .map(document -> new DocumentSummary(
                         document.getId(),
                         document.getTitle(),
@@ -40,8 +42,7 @@ public class DocumentQueryService {
                         document.getClassification(),
                         document.getCreatedAt(),
                         document.getUpdatedAt()
-                ))
-                .toList();
+                ));
     }
 
     public List<DocumentVersionSummary> findVersions(UUID documentId) {
@@ -88,5 +89,14 @@ public class DocumentQueryService {
         if (!documentRepository.existsById(documentId)) {
             throw new DocumentNotFoundException(documentId);
         }
+    }
+
+    private Pageable capped(Pageable pageable) {
+        int page = pageable == null ? 0 : Math.max(0, pageable.getPageNumber());
+        int size = pageable == null ? 25 : Math.clamp(pageable.getPageSize(), 1, 100);
+        return PageRequest.of(page, size, org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.DESC,
+                "updatedAt"
+        ));
     }
 }

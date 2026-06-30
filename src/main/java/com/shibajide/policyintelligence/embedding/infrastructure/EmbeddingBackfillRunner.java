@@ -1,14 +1,14 @@
 package com.shibajide.policyintelligence.embedding.infrastructure;
 
 import com.shibajide.policyintelligence.embedding.application.EmbeddingService;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-public class EmbeddingBackfillRunner implements ApplicationRunner {
+public class EmbeddingBackfillRunner {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EmbeddingBackfillRunner.class);
 
@@ -18,8 +18,12 @@ public class EmbeddingBackfillRunner implements ApplicationRunner {
         this.embeddingService = embeddingService;
     }
 
-    @Override
-    public void run(ApplicationArguments args) {
+    @Scheduled(
+            initialDelayString = "${app.embeddings.backfill-initial-delay:PT5S}",
+            fixedDelayString = "${app.embeddings.backfill-fixed-delay:PT24H}"
+    )
+    @SchedulerLock(name = "embedding-backfill", lockAtMostFor = "10m", lockAtLeastFor = "30s")
+    public void runBackfill() {
         var result = embeddingService.embedPendingChunks();
         if (result.completed() > 0 || result.failed() > 0) {
             LOGGER.info(

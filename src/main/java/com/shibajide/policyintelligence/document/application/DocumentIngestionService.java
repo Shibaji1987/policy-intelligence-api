@@ -4,7 +4,6 @@ import com.shibajide.policyintelligence.chunking.ChunkerRegistry;
 import com.shibajide.policyintelligence.document.domain.Document;
 import com.shibajide.policyintelligence.document.domain.DocumentChunk;
 import com.shibajide.policyintelligence.document.domain.DocumentVersion;
-import com.shibajide.policyintelligence.document.infrastructure.CorpusStateRepository;
 import com.shibajide.policyintelligence.document.infrastructure.DocumentChunkRepository;
 import com.shibajide.policyintelligence.document.infrastructure.DocumentRepository;
 import com.shibajide.policyintelligence.document.infrastructure.DocumentVersionRepository;
@@ -25,7 +24,7 @@ public class DocumentIngestionService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
     private final DocumentChunkRepository chunkRepository;
-    private final CorpusStateRepository corpusStateRepository;
+    private final CorpusVersionService corpusVersionService;
     private final DocumentContentExtractor contentExtractor;
     private final ChunkerRegistry chunkerRegistry;
     private final EmbeddingService embeddingService;
@@ -34,7 +33,7 @@ public class DocumentIngestionService {
             DocumentRepository documentRepository,
             DocumentVersionRepository versionRepository,
             DocumentChunkRepository chunkRepository,
-            CorpusStateRepository corpusStateRepository,
+            CorpusVersionService corpusVersionService,
             DocumentContentExtractor contentExtractor,
             ChunkerRegistry chunkerRegistry,
             EmbeddingService embeddingService
@@ -42,7 +41,7 @@ public class DocumentIngestionService {
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
         this.chunkRepository = chunkRepository;
-        this.corpusStateRepository = corpusStateRepository;
+        this.corpusVersionService = corpusVersionService;
         this.contentExtractor = contentExtractor;
         this.chunkerRegistry = chunkerRegistry;
         this.embeddingService = embeddingService;
@@ -69,7 +68,7 @@ public class DocumentIngestionService {
         var chunks = replaceActiveChunks(plan, version);
 
         finalizeIngestion(document);
-        long corpusVersion = corpusStateRepository.lockSingleton().increment();
+        long corpusVersion = corpusVersionService.increment(document.getTenantId());
         return result(document, version, plan.versionNumber(), chunks.size(), corpusVersion);
     }
 

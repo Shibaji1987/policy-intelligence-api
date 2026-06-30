@@ -9,6 +9,12 @@ import com.shibajide.policyintelligence.document.application.DocumentVersionSumm
 import com.shibajide.policyintelligence.document.application.IngestDocumentCommand;
 import com.shibajide.policyintelligence.document.domain.ChunkingStrategy;
 import com.shibajide.policyintelligence.security.RetrievalAccessPolicy;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.apache.tika.Tika;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,24 +33,29 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/documents")
+@Tag(name = "Documents", description = "Document ingestion, immutable versions, and chunk inspection")
 public class DocumentController {
 
     private final DocumentIngestionService ingestionService;
     private final DocumentQueryService queryService;
     private final RetrievalAccessPolicy accessPolicy;
+    private final Tika tika;
 
     public DocumentController(
             DocumentIngestionService ingestionService,
             DocumentQueryService queryService,
-            RetrievalAccessPolicy accessPolicy
+            RetrievalAccessPolicy accessPolicy,
+            Tika tika
     ) {
         this.ingestionService = ingestionService;
         this.queryService = queryService;
         this.accessPolicy = accessPolicy;
+        this.tika = tika;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create a document and its first immutable version")
     public DocumentIngestionResult create(
             @RequestParam String title,
             @RequestParam MultipartFile file,
@@ -62,8 +73,10 @@ public class DocumentController {
 
     @PostMapping(path = "/{documentId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create a new immutable version for an existing document")
     public DocumentIngestionResult createVersion(
             @PathVariable UUID documentId,
+            @RequestParam(required = false) String title,
             @RequestParam MultipartFile file,
             @RequestParam(defaultValue = "default") String tenantId,
             @RequestParam(required = false) String department,
@@ -74,24 +87,27 @@ public class DocumentController {
             @RequestParam(defaultValue = "1000") int chunkSize,
             @RequestParam(defaultValue = "200") int overlap
     ) {
-        String titlePlaceholder = "existing-document";
+        String effectiveTitle = title == null || title.isBlank() ? "Version update for " + documentId : title;
         return ingestionService.createVersion(
                 documentId,
-                toCommand(titlePlaceholder, file, accessPolicy.ingestionTenant(tenantId), department, region, documentType, classification, strategy, chunkSize, overlap)
+                toCommand(effectiveTitle, file, accessPolicy.ingestionTenant(tenantId), department, region, documentType, classification, strategy, chunkSize, overlap)
         );
     }
 
     @GetMapping
-    public List<DocumentSummary> findDocuments() {
-        return queryService.findDocuments();
+    @Operation(summary = "List documents with pagination")
+    public Page<DocumentSummary> findDocuments(@PageableDefault(size = 25) Pageable pageable) {
+        return queryService.findDocuments(pageable);
     }
 
     @GetMapping("/{documentId}/versions")
+    @Operation(summary = "List immutable versions for a document")
     public List<DocumentVersionSummary> findVersions(@PathVariable UUID documentId) {
         return queryService.findVersions(documentId);
     }
 
     @GetMapping("/versions/{versionId}/chunks")
+    @Operation(summary = "List chunks for a document version")
     public List<DocumentChunkSummary> findChunks(@PathVariable UUID versionId) {
         return queryService.findChunks(versionId);
     }
@@ -112,7 +128,7 @@ public class DocumentController {
             return new IngestDocumentCommand(
                     title,
                     file.getOriginalFilename() == null ? "uploaded-file" : file.getOriginalFilename(),
-                    file.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.getContentType(),
+                    detectMediaType(file),
                     file.getBytes(),
                     tenantId,
                     department,
@@ -126,5 +142,10 @@ public class DocumentController {
         } catch (IOException exception) {
             throw new UncheckedIOException("Could not read uploaded file", exception);
         }
+    }
+
+    private String detectMediaType(MultipartFile file) throws IOException {
+        String detected = tika.detect(file.getBytes(), file.getOriginalFilename());
+        return detected == null || detected.isBlank() ? MediaType.APPLICATION_OCTET_STREAM_VALUE : detected;
     }
 }

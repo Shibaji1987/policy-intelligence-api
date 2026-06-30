@@ -2,7 +2,7 @@ package com.shibajide.policyintelligence.retrieval.application;
 
 import com.shibajide.policyintelligence.cache.application.RetrievalCache;
 import com.shibajide.policyintelligence.billing.application.BillingEstimator;
-import com.shibajide.policyintelligence.document.infrastructure.CorpusStateRepository;
+import com.shibajide.policyintelligence.document.application.CorpusVersionService;
 import com.shibajide.policyintelligence.embedding.application.EmbeddingGenerator;
 import com.shibajide.policyintelligence.retrieval.infrastructure.VectorSearchRepository;
 import com.shibajide.policyintelligence.shared.text.TokenEstimator;
@@ -18,7 +18,7 @@ public class RetrievalSearchService {
 
     private final EmbeddingGenerator embeddingGenerator;
     private final VectorSearchRepository vectorSearchRepository;
-    private final CorpusStateRepository corpusStateRepository;
+    private final CorpusVersionService corpusVersionService;
     private final RetrievalCache retrievalCache;
     private final TokenEstimator tokenEstimator;
     private final BillingEstimator billingEstimator;
@@ -26,14 +26,14 @@ public class RetrievalSearchService {
     public RetrievalSearchService(
             EmbeddingGenerator embeddingGenerator,
             VectorSearchRepository vectorSearchRepository,
-            CorpusStateRepository corpusStateRepository,
+            CorpusVersionService corpusVersionService,
             RetrievalCache retrievalCache,
             TokenEstimator tokenEstimator,
             BillingEstimator billingEstimator
     ) {
         this.embeddingGenerator = embeddingGenerator;
         this.vectorSearchRepository = vectorSearchRepository;
-        this.corpusStateRepository = corpusStateRepository;
+        this.corpusVersionService = corpusVersionService;
         this.retrievalCache = retrievalCache;
         this.tokenEstimator = tokenEstimator;
         this.billingEstimator = billingEstimator;
@@ -58,7 +58,7 @@ public class RetrievalSearchService {
         String effectiveQuery = RetrievalSupport.requireQuery(query, "Retrieval search");
         RetrievalFilters effectiveFilters = filters == null ? RetrievalFilters.defaults() : filters;
         int effectiveTopK = topK == null ? DEFAULT_TOP_K : Math.clamp(topK, 1, MAX_TOP_K);
-        long corpusVersion = corpusVersion();
+        long corpusVersion = corpusVersion(effectiveFilters);
         return new RetrievalSearchRequest(
                 effectiveQuery,
                 effectiveTopK,
@@ -103,10 +103,8 @@ public class RetrievalSearchService {
         );
     }
 
-    private long corpusVersion() {
-        return corpusStateRepository.findById((short) 1)
-                .orElseThrow()
-                .getCorpusVersion();
+    private long corpusVersion(RetrievalFilters filters) {
+        return corpusVersionService.currentVersion(filters.tenantId());
     }
 
     private String cacheKey(String query, int topK, RetrievalFilters filters, long corpusVersion) {

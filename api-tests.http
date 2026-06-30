@@ -1,0 +1,58 @@
+@api = http://localhost:8080
+@ui = http://localhost:4200
+
+### Health
+GET {{api}}/actuator/health
+
+### Swagger UI
+GET {{api}}/swagger-ui/index.html
+
+### List documents, paged
+GET {{api}}/api/v1/documents?page=0&size=25
+X-User-Id: demo-user
+X-Tenant-Id: default
+X-Allowed-Departments: Security,Compliance
+X-Allowed-Regions: Global,Canada
+X-Allowed-Classifications: Internal,Restricted
+
+### Vector retrieval search
+GET {{api}}/api/v1/retrieval/search?query=Can%20contractors%20access%20production%20customer%20data%3F&topK=5
+X-User-Id: demo-user
+X-Tenant-Id: default
+X-Allowed-Departments: Security,Compliance
+X-Allowed-Regions: Global,Canada
+X-Allowed-Classifications: Internal,Restricted
+
+### Advisor answer
+POST {{api}}/api/v1/advisor
+Content-Type: application/json
+X-User-Id: demo-user
+X-Tenant-Id: default
+X-Allowed-Departments: Security,Compliance
+X-Allowed-Regions: Global,Canada
+X-Allowed-Classifications: Internal,Restricted
+
+{
+  "question": "Can contractors access production customer data?"
+}
+
+### Create advisor stream session
+POST {{api}}/api/v1/advisor/stream
+Content-Type: application/json
+X-User-Id: demo-user
+X-Tenant-Id: default
+X-Allowed-Departments: Security,Compliance
+X-Allowed-Regions: Global,Canada
+X-Allowed-Classifications: Internal,Restricted
+
+{
+  "question": "Can contractors access production customer data?"
+}
+
+### Run golden evaluation
+POST {{api}}/api/v1/evaluations/run-golden-questions
+X-User-Id: demo-user
+X-Tenant-Id: default
+X-Allowed-Departments: Security,Compliance
+X-Allowed-Regions: Global,Canada
+X-Allowed-Classifications: Internal,Restricted

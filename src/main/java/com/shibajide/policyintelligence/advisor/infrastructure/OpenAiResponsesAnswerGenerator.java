@@ -2,6 +2,7 @@ package com.shibajide.policyintelligence.advisor.infrastructure;
 
 import com.shibajide.policyintelligence.advisor.application.AnswerGenerator;
 import com.shibajide.policyintelligence.context.application.BuiltContext;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +57,7 @@ public class OpenAiResponsesAnswerGenerator implements AnswerGenerator {
     }
 
     @Override
+    @CircuitBreaker(name = "openaiResponses", fallbackMethod = "fallbackAnswer")
     public String answer(String question, BuiltContext context) {
         if (!enabled || !StringUtils.hasText(apiKey)) {
             LOGGER.info("LLM answer generation skipped. reason={}, fallback=extractive",
@@ -87,6 +89,11 @@ public class OpenAiResponsesAnswerGenerator implements AnswerGenerator {
             LOGGER.warn("LLM answer generation failed. Falling back to extractive answer.", exception);
             return fallback.answer(question, context);
         }
+    }
+
+    String fallbackAnswer(String question, BuiltContext context, Throwable throwable) {
+        LOGGER.warn("LLM circuit breaker fallback used. reason={}", throwable.getClass().getSimpleName());
+        return fallback.answer(question, context);
     }
 
     @Override

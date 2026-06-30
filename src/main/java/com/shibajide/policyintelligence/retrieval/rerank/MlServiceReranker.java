@@ -8,6 +8,14 @@ public class MlServiceReranker implements Reranker {
 
     @Override
     public List<RerankedChunk> rerank(String question, List<RetrievedChunk> chunks) {
-        throw new UnsupportedOperationException("ML service cross-encoder reranking is a future extension point.");
+        return new HeuristicReranker().rerank(question, chunks).stream()
+                .map(chunk -> new RerankedChunk(
+                        chunk.chunk(),
+                        chunk.rrfScore(),
+                        chunk.rerankScore(),
+                        chunk.rerankRank(),
+                        "ML service reranker unavailable; heuristic fallback used"
+                ))
+                .toList();
     }
 }

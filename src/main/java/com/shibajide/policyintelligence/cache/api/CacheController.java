@@ -19,6 +19,9 @@ public class CacheController {
 
     @GetMapping("/retrieval")
     public Map<String, Object> retrieval() {
-        return Map.of("hitRate", retrievalCache.hitRate());
+        return Map.of(
+                "backend", retrievalCache.backend(),
+                "hitRate", retrievalCache.hitRate()
+        );
     }
 }

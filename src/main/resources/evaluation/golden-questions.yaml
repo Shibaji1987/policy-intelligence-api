@@ -1,0 +1,70 @@
+- id: contractor-production-access
+  question: Can contractors access production customer data?
+  expectedSourceHints:
+    - Vendor and Contractor Access
+    - Production Data Access
+  expectedAnswerHint: Contractors require explicit approval and should cite the controlling policy chunk.
+  expectedChunkIds: []
+  expectedAnswerKeywords:
+    - contractor
+    - approval
+    - production
+  expectedDocumentIds: []
+- id: audit-review-cadence
+  question: How often should privileged production access be reviewed?
+  expectedSourceHints:
+    - Audit and Monitoring
+    - access review record
+  expectedAnswerHint: The answer should include the review cadence and evidence requirement.
+  expectedChunkIds: []
+  expectedAnswerKeywords:
+    - review
+    - evidence
+    - access
+  expectedDocumentIds: []
+- id: policy-exception-approval
+  question: Who must approve a policy exception?
+  expectedSourceHints:
+    - Exception Governance
+    - risk acceptance
+  expectedAnswerHint: The answer should identify the approval path and required evidence.
+  expectedChunkIds: []
+  expectedAnswerKeywords:
+    - approval
+    - exception
+    - evidence
+  expectedDocumentIds: []
+- id: confusing-contractor-production-customer-data
+  question: Can contractors access production customer data during emergency support?
+  expectedSourceHints:
+    - Contractor Production Customer Data Access Standard
+  expectedAnswerHint: The answer should distinguish contractor production access from employee access and sandbox access.
+  expectedChunkIds: []
+  expectedAnswerKeywords:
+    - contractor
+    - production
+    - data owner approval
+    - emergency
+  expectedDocumentIds: []
+- id: confusing-contractor-sandbox-vs-production
+  question: Can contractors use customer data in a sandbox environment?
+  expectedSourceHints:
+    - Contractor Sandbox Customer Data Handling Standard
+  expectedAnswerHint: The answer should select sandbox masking rules, not production access rules.
+  expectedChunkIds: []
+  expectedAnswerKeywords:
+    - sandbox
+    - masked
+    - contractor
+  expectedDocumentIds: []
+- id: confusing-employee-production-vs-contractor
+  question: Do employees need the same approval as contractors for scheduled production customer data access?
+  expectedSourceHints:
+    - Employee Production Customer Data Access Standard
+  expectedAnswerHint: The answer should cite employee scheduled access rules, not contractor emergency access rules.
+  expectedChunkIds: []
+  expectedAnswerKeywords:
+    - employee
+    - scheduled
+    - manager approval
+  expectedDocumentIds: []

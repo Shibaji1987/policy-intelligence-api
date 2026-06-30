@@ -6,9 +6,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
-public interface CorpusStateRepository extends JpaRepository<CorpusState, Short> {
+import java.util.Optional;
+
+public interface CorpusStateRepository extends JpaRepository<CorpusState, String> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select state from CorpusState state where state.id = 1")
-    CorpusState lockSingleton();
+    @Query("select state from CorpusState state where state.tenantId = :tenantId")
+    Optional<CorpusState> findLockedByTenantId(String tenantId);
 }

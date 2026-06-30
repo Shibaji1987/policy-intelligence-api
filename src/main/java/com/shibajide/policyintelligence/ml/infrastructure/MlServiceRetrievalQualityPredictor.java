@@ -3,6 +3,7 @@ package com.shibajide.policyintelligence.ml.infrastructure;
 import com.shibajide.policyintelligence.ml.application.RetrievalQualityFeatures;
 import com.shibajide.policyintelligence.ml.application.RetrievalQualityPrediction;
 import com.shibajide.policyintelligence.ml.application.RetrievalQualityPredictor;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,7 @@ public class MlServiceRetrievalQualityPredictor implements RetrievalQualityPredi
     }
 
     @Override
+    @CircuitBreaker(name = "mlRetrievalQuality", fallbackMethod = "fallbackPrediction")
     public RetrievalQualityPrediction predict(RetrievalQualityFeatures features) {
         if (!enabled) {
             return RetrievalQualityPrediction.unavailable();
@@ -51,6 +53,11 @@ public class MlServiceRetrievalQualityPredictor implements RetrievalQualityPredi
             LOGGER.warn("ML retrieval quality prediction failed. Falling back to UNKNOWN.", exception);
             return RetrievalQualityPrediction.unavailable();
         }
+    }
+
+    RetrievalQualityPrediction fallbackPrediction(RetrievalQualityFeatures features, Throwable throwable) {
+        LOGGER.warn("ML circuit breaker fallback used. reason={}", throwable.getClass().getSimpleName());
+        return RetrievalQualityPrediction.unavailable();
     }
 
     private static SimpleClientHttpRequestFactory requestFactory() {

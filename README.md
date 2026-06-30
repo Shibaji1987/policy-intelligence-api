@@ -288,9 +288,17 @@ Document APIs:
 
 ```text
 POST /api/v1/documents
-GET  /api/v1/documents
+GET  /api/v1/documents?page=0&size=25
 GET  /api/v1/documents/{documentId}/versions
 GET  /api/v1/documents/versions/{versionId}/chunks
+```
+
+Advisor streaming uses a POST-to-session flow so long questions are not placed
+in query strings:
+
+```text
+POST /api/v1/advisor/stream      -> { "streamId": "..." }
+GET  /api/v1/advisor/stream/{id} -> text/event-stream
 ```
 
 ## Current vertical slice
@@ -299,10 +307,10 @@ GET  /api/v1/documents/versions/{versionId}/chunks
 - PostgreSQL with PGVector
 - Flyway-owned schema
 - PDF, TXT, and Markdown text extraction
-- Fixed-size and sliding-window chunking
+- Fixed-size, sliding-window, and sentence-aware chunking
 - Immutable document versions
 - Old chunk deactivation
-- Corpus version increments for future cache invalidation
+- Per-tenant corpus version increments for cache invalidation
 - Embedding lifecycle state (`PENDING`, `COMPLETED`, `FAILED`)
 - Embedding retry endpoint and stored failure reason
 - Vector retrieval with cosine distance
@@ -386,13 +394,14 @@ Implemented:
 - source IDs and similarity scores included in LLM context
 - SSE advisor event stages
 - retrieval cache key includes corpus version
+- Redis-backed retrieval cache option for multi-container local runs
+- PostgreSQL row-level-security policy scaffold for chunk tenant isolation
 - trace detail API for retrieved, used, and discarded chunks
 
 Not implemented yet:
 
 - document-level permissions
 - restricted policy visibility by user
-- PostgreSQL row-level security
 - object storage for original uploaded files
 - production secrets manager
 - cloud Kubernetes manifests
@@ -507,6 +516,8 @@ UI:       http://localhost:4200
 API:      http://localhost:8080
 ML:       http://localhost:8090
 Postgres: localhost:5433
+Redis:    localhost:6379
+Swagger:  http://localhost:8080/swagger-ui/index.html
 ```
 
 The Dockerized PGVector instance is published on host port `5433` to avoid

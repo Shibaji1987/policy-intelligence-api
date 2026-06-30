@@ -2,6 +2,7 @@ package com.shibajide.policyintelligence.embedding.infrastructure;
 
 import com.shibajide.policyintelligence.embedding.application.EmbeddingGenerator;
 import com.shibajide.policyintelligence.embedding.application.EmbeddingVector;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +38,7 @@ public class OpenAiEmbeddingGenerator implements EmbeddingGenerator {
     }
 
     @Override
+    @CircuitBreaker(name = "openaiEmbeddings")
     public EmbeddingVector embed(String text) {
         if (!StringUtils.hasText(apiKey)) {
             throw new IllegalStateException("OPENAI_API_KEY is required when app.embeddings.provider=openai.");

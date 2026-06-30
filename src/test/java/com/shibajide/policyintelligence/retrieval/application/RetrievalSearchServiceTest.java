@@ -1,19 +1,19 @@
 package com.shibajide.policyintelligence.retrieval.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shibajide.policyintelligence.cache.application.RetrievalCache;
 import com.shibajide.policyintelligence.billing.application.BillingEstimator;
 import com.shibajide.policyintelligence.billing.application.BillingProperties;
-import com.shibajide.policyintelligence.document.domain.CorpusState;
-import com.shibajide.policyintelligence.document.infrastructure.CorpusStateRepository;
+import com.shibajide.policyintelligence.document.application.CorpusVersionService;
 import com.shibajide.policyintelligence.embedding.application.EmbeddingVector;
 import com.shibajide.policyintelligence.retrieval.infrastructure.VectorSearchRepository;
 import com.shibajide.policyintelligence.shared.text.TokenEstimator;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,8 +34,8 @@ class RetrievalSearchServiceTest {
                     return new EmbeddingVector("test-embedding", 3, new float[] {0.1f, 0.2f, 0.3f});
                 },
                 repository(List.of(chunk)),
-                corpusStateRepository(),
-                new RetrievalCache(),
+                corpusVersionService(),
+                localCache(),
                 tokenEstimator,
                 new BillingEstimator(new BillingProperties(
                         "ESTIMATED_INPUT_ONLY",
@@ -83,12 +83,14 @@ class RetrievalSearchServiceTest {
         };
     }
 
-    private CorpusStateRepository corpusStateRepository() {
-        CorpusState state = mock(CorpusState.class);
-        when(state.getCorpusVersion()).thenReturn(42L);
-        CorpusStateRepository repository = mock(CorpusStateRepository.class);
-        when(repository.findById((short) 1)).thenReturn(Optional.of(state));
-        return repository;
+    private CorpusVersionService corpusVersionService() {
+        CorpusVersionService service = mock(CorpusVersionService.class);
+        when(service.currentVersion("default")).thenReturn(42L);
+        return service;
+    }
+
+    private RetrievalCache localCache() {
+        return new RetrievalCache(null, new ObjectMapper(), "LOCAL", "", Duration.ofMinutes(30));
     }
 
     private RetrievedChunk chunk() {

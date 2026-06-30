@@ -15,6 +15,16 @@ services:
     volumes:
       - policy-postgres-data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   ml-service:
     build:
       context: ../policy-intelligence-ml
@@ -54,12 +64,17 @@ services:
       ADVISOR_PARENT_CHILD_SEED_LIMIT: ${ADVISOR_PARENT_CHILD_SEED_LIMIT:-6}
       SECURITY_ENABLED: ${SECURITY_ENABLED:-false}
       SECURITY_ENFORCE_HEADER_SCOPES: ${SECURITY_ENFORCE_HEADER_SCOPES:-true}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      RETRIEVAL_CACHE_BACKEND: ${RETRIEVAL_CACHE_BACKEND:-REDIS}
     ports:
       - "8080:8080"
     volumes:
       - ./.secrets:/run/policy-secrets:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       ml-service:
         condition: service_healthy
