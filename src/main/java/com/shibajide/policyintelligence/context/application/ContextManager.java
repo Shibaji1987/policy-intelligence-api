@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -50,108 +51,39 @@ public class ContextManager {
 
     public BuiltContext build(String question, List<RetrievedChunk> retrievedChunks) {
         var compressedContext = compressionService.compress(question, retrievedChunks);
-        Map<java.util.UUID, CompressedChunk> compressedByChunk = compressedContext.chunks().stream()
-                .collect(Collectors.toMap(chunk -> chunk.source().chunkId(), chunk -> chunk));
-        var used = new ArrayList<RetrievedChunk>();
-        var discarded = new ArrayList<RetrievedChunk>();
-        var decisions = new ArrayList<ContextChunkDecision>();
-        var fingerprints = new HashSet<String>();
-        var tokenSets = new ArrayList<Set<String>>();
-        var documents = new HashSet<String>();
-        var documentCounts = new HashMap<String, Integer>();
-        int estimatedTokens = 0;
-        int duplicateDiscarded = 0;
-        int nearDuplicateDiscarded = 0;
-        int documentQuotaDiscarded = 0;
-        int tokenBudgetDiscarded = 0;
-        int maxChunkDiscarded = 0;
-
-        for (RetrievedChunk chunk : retrievedChunks) {
-            CompressedChunk compressed = compressedByChunk.get(chunk.chunkId());
-            int originalTokens = compressed == null ? tokenEstimator.estimate(chunk.chunkText()) : compressed.originalTokenCount();
-            int chunkTokens = compressed == null ? tokenEstimator.estimate(chunk.chunkText()) : compressed.compressedTokenCount();
-            String fingerprint = fingerprint(chunk.chunkText());
-            Set<String> tokenSet = tokenSet(chunk.chunkText());
-            boolean duplicate = !fingerprints.add(fingerprint);
-            boolean nearDuplicate = !duplicate && isNearDuplicate(tokenSet, tokenSets);
-            boolean overBudget = estimatedTokens + chunkTokens > tokenBudget;
-            boolean tooMany = used.size() >= maxChunks;
-            String documentKey = chunk.documentId().toString();
-            boolean documentQuotaExceeded = documentCounts.getOrDefault(documentKey, 0) >= maxChunksPerDocument;
-
-            if (duplicate || nearDuplicate || overBudget || tooMany || documentQuotaExceeded) {
-                discarded.add(chunk);
-                String reason;
-                if (duplicate) {
-                    duplicateDiscarded++;
-                    reason = "DUPLICATE";
-                } else if (nearDuplicate) {
-                    nearDuplicateDiscarded++;
-                    reason = "NEAR_DUPLICATE";
-                } else if (overBudget) {
-                    tokenBudgetDiscarded++;
-                    reason = "TOKEN_BUDGET_EXCEEDED";
-                } else if (tooMany) {
-                    maxChunkDiscarded++;
-                    reason = "LOW_RANK";
-                } else {
-                    documentQuotaDiscarded++;
-                    reason = "DOCUMENT_DIVERSITY_LIMIT";
-                }
-                decisions.add(new ContextChunkDecision(
-                        chunk,
-                        false,
-                        null,
-                        reason,
-                        chunkTokens,
-                        originalTokens,
-                        chunkTokens,
-                        compressed == null ? 1 : compressed.compressionRatio(),
-                        compressed == null ? "NONE" : compressed.compressionMethod(),
-                        compressed == null ? chunk.chunkText() : compressed.originalText(),
-                        compressed == null ? chunk.chunkText() : compressed.compressedText()
-                ));
-                continue;
-            }
-
-            used.add(chunk);
-            tokenSets.add(tokenSet);
-            documents.add(documentKey);
-            documentCounts.merge(documentKey, 1, Integer::sum);
-            estimatedTokens += chunkTokens;
-            decisions.add(new ContextChunkDecision(
-                    chunk,
-                    true,
-                    used.size(),
-                    "USED",
-                    chunkTokens,
-                    originalTokens,
-                    chunkTokens,
-                    compressed == null ? 1 : compressed.compressionRatio(),
-                    compressed == null ? "NONE" : compressed.compressionMethod(),
-                    compressed == null ? chunk.chunkText() : compressed.originalText(),
-                    compressed == null ? chunk.chunkText() : compressed.compressedText()
-            ));
-        }
-
-        var packed = packingService.pack(used.stream()
-                .map(chunk -> compressedByChunk.get(chunk.chunkId()))
-                .filter(java.util.Objects::nonNull)
-                .toList());
-        String contextText = formatContext(packed.orderedChunks());
-        var metrics = new ContextMetrics(
-                retrievedChunks.size(),
-                used.size(),
-                discarded.size(),
-                estimatedTokens,
-                documents.size(),
-                duplicateDiscarded,
-                nearDuplicateDiscarded,
-                documentQuotaDiscarded,
-                tokenBudgetDiscarded,
-                maxChunkDiscarded
+        ContextSelection selection = selectChunks(retrievedChunks, compressedByChunk(compressedContext.chunks()));
+        String contextText = packedContextText(selection);
+        return new BuiltContext(
+                contextText,
+                selection.metrics(retrievedChunks.size()),
+                List.copyOf(selection.used),
+                List.copyOf(selection.discarded),
+                List.copyOf(selection.decisions)
         );
-        return new BuiltContext(contextText, metrics, List.copyOf(used), List.copyOf(discarded), List.copyOf(decisions));
+    }
+
+    private Map<java.util.UUID, CompressedChunk> compressedByChunk(List<CompressedChunk> chunks) {
+        return chunks.stream()
+                .collect(Collectors.toMap(chunk -> chunk.source().chunkId(), chunk -> chunk));
+    }
+
+    private ContextSelection selectChunks(
+            List<RetrievedChunk> retrievedChunks,
+            Map<java.util.UUID, CompressedChunk> compressedByChunk
+    ) {
+        ContextSelection selection = new ContextSelection(compressedByChunk);
+        retrievedChunks.stream()
+                .map(selection::candidate)
+                .forEach(selection::apply);
+        return selection;
+    }
+
+    private String packedContextText(ContextSelection selection) {
+        var packed = packingService.pack(selection.used.stream()
+                .map(chunk -> selection.compressedByChunk.get(chunk.chunkId()))
+                .filter(Objects::nonNull)
+                .toList());
+        return formatContext(packed.orderedChunks());
     }
 
     private String formatContext(List<CompressedChunk> chunks) {
@@ -199,12 +131,7 @@ public class ContextManager {
         if (current.isEmpty()) {
             return false;
         }
-        for (Set<String> candidate : existing) {
-            if (jaccard(current, candidate) >= 0.82) {
-                return true;
-            }
-        }
-        return false;
+        return existing.stream().anyMatch(candidate -> jaccard(current, candidate) >= 0.82);
     }
 
     private double jaccard(Set<String> first, Set<String> second) {
@@ -219,5 +146,167 @@ public class ContextManager {
         }
         int union = first.size() + second.size() - intersection;
         return union == 0 ? 0 : (double) intersection / union;
+    }
+
+    private enum DiscardReason {
+        DUPLICATE,
+        NEAR_DUPLICATE,
+        TOKEN_BUDGET_EXCEEDED,
+        LOW_RANK,
+        DOCUMENT_DIVERSITY_LIMIT
+    }
+
+    private record ContextCandidate(
+            RetrievedChunk chunk,
+            CompressedChunk compressed,
+            int originalTokens,
+            int chunkTokens,
+            String fingerprint,
+            Set<String> tokenSet
+    ) {
+        String documentKey() {
+            return chunk.documentId().toString();
+        }
+
+        double compressionRatio() {
+            return compressed == null ? 1 : compressed.compressionRatio();
+        }
+
+        String compressionMethod() {
+            return compressed == null ? "NONE" : compressed.compressionMethod();
+        }
+
+        String originalText() {
+            return compressed == null ? chunk.chunkText() : compressed.originalText();
+        }
+
+        String compressedText() {
+            return compressed == null ? chunk.chunkText() : compressed.compressedText();
+        }
+    }
+
+    private class ContextSelection {
+        private final Map<java.util.UUID, CompressedChunk> compressedByChunk;
+        private final List<RetrievedChunk> used = new ArrayList<>();
+        private final List<RetrievedChunk> discarded = new ArrayList<>();
+        private final List<ContextChunkDecision> decisions = new ArrayList<>();
+        private final Set<String> fingerprints = new HashSet<>();
+        private final List<Set<String>> tokenSets = new ArrayList<>();
+        private final Set<String> documents = new HashSet<>();
+        private final Map<String, Integer> documentCounts = new HashMap<>();
+        private int estimatedTokens;
+        private int duplicateDiscarded;
+        private int nearDuplicateDiscarded;
+        private int documentQuotaDiscarded;
+        private int tokenBudgetDiscarded;
+        private int maxChunkDiscarded;
+
+        ContextSelection(Map<java.util.UUID, CompressedChunk> compressedByChunk) {
+            this.compressedByChunk = compressedByChunk;
+        }
+
+        ContextCandidate candidate(RetrievedChunk chunk) {
+            CompressedChunk compressed = compressedByChunk.get(chunk.chunkId());
+            int originalTokens = compressed == null ? tokenEstimator.estimate(chunk.chunkText()) : compressed.originalTokenCount();
+            int chunkTokens = compressed == null ? tokenEstimator.estimate(chunk.chunkText()) : compressed.compressedTokenCount();
+            return new ContextCandidate(
+                    chunk,
+                    compressed,
+                    originalTokens,
+                    chunkTokens,
+                    fingerprint(chunk.chunkText()),
+                    tokenSet(chunk.chunkText())
+            );
+        }
+
+        void apply(ContextCandidate candidate) {
+            DiscardReason reason = discardReason(candidate);
+            if (reason == null) {
+                use(candidate);
+            } else {
+                discard(candidate, reason);
+            }
+        }
+
+        private DiscardReason discardReason(ContextCandidate candidate) {
+            if (!fingerprints.add(candidate.fingerprint())) {
+                return DiscardReason.DUPLICATE;
+            }
+            if (isNearDuplicate(candidate.tokenSet(), tokenSets)) {
+                return DiscardReason.NEAR_DUPLICATE;
+            }
+            if (estimatedTokens + candidate.chunkTokens() > tokenBudget) {
+                return DiscardReason.TOKEN_BUDGET_EXCEEDED;
+            }
+            if (used.size() >= maxChunks) {
+                return DiscardReason.LOW_RANK;
+            }
+            if (documentCounts.getOrDefault(candidate.documentKey(), 0) >= maxChunksPerDocument) {
+                return DiscardReason.DOCUMENT_DIVERSITY_LIMIT;
+            }
+            return null;
+        }
+
+        private void use(ContextCandidate candidate) {
+            used.add(candidate.chunk());
+            tokenSets.add(candidate.tokenSet());
+            documents.add(candidate.documentKey());
+            documentCounts.merge(candidate.documentKey(), 1, Integer::sum);
+            estimatedTokens += candidate.chunkTokens();
+            decisions.add(decision(candidate, true, used.size(), "USED"));
+        }
+
+        private void discard(ContextCandidate candidate, DiscardReason reason) {
+            discarded.add(candidate.chunk());
+            increment(reason);
+            decisions.add(decision(candidate, false, null, reason.name()));
+        }
+
+        private ContextChunkDecision decision(
+                ContextCandidate candidate,
+                boolean used,
+                Integer rank,
+                String reason
+        ) {
+            return new ContextChunkDecision(
+                    candidate.chunk(),
+                    used,
+                    rank,
+                    reason,
+                    candidate.chunkTokens(),
+                    candidate.originalTokens(),
+                    candidate.chunkTokens(),
+                    candidate.compressionRatio(),
+                    candidate.compressionMethod(),
+                    candidate.originalText(),
+                    candidate.compressedText()
+            );
+        }
+
+        private void increment(DiscardReason reason) {
+            switch (reason) {
+                case DUPLICATE -> duplicateDiscarded++;
+                case NEAR_DUPLICATE -> nearDuplicateDiscarded++;
+                case TOKEN_BUDGET_EXCEEDED -> tokenBudgetDiscarded++;
+                case LOW_RANK -> maxChunkDiscarded++;
+                case DOCUMENT_DIVERSITY_LIMIT -> documentQuotaDiscarded++;
+                default -> throw new IllegalStateException("Unsupported discard reason: " + reason);
+            }
+        }
+
+        private ContextMetrics metrics(int retrievedCount) {
+            return new ContextMetrics(
+                    retrievedCount,
+                    used.size(),
+                    discarded.size(),
+                    estimatedTokens,
+                    documents.size(),
+                    duplicateDiscarded,
+                    nearDuplicateDiscarded,
+                    documentQuotaDiscarded,
+                    tokenBudgetDiscarded,
+                    maxChunkDiscarded
+            );
+        }
     }
 }
