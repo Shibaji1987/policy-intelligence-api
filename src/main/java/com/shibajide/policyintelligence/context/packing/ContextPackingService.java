@@ -11,6 +11,10 @@ import java.util.List;
 public class ContextPackingService {
 
     public PackedContext pack(List<CompressedChunk> chunks) {
+        if (chunks.isEmpty()) {
+            return new PackedContext(List.of(), LostInMiddleMitigationStrategy.EDGE_WEIGHTED);
+        }
+
         var edgeWeighted = new LinkedList<CompressedChunk>();
         var middle = new ArrayList<CompressedChunk>();
         for (int index = 0; index < chunks.size(); index++) {
@@ -23,7 +27,7 @@ public class ContextPackingService {
                 middle.add(chunk);
             }
         }
-        int insertionPoint = Math.max(1, edgeWeighted.size() / 2);
+        int insertionPoint = Math.min(edgeWeighted.size(), Math.max(1, edgeWeighted.size() / 2));
         edgeWeighted.addAll(insertionPoint, middle);
         return new PackedContext(List.copyOf(edgeWeighted), LostInMiddleMitigationStrategy.EDGE_WEIGHTED);
     }

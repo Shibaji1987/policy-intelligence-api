@@ -9,6 +9,8 @@ An enterprise-style RAG platform for ingesting policy documents, chunking them,
 embedding them, retrieving relevant policy context with PGVector cosine search,
 and generating grounded advisor answers with source attribution.
 
+![Policy Intelligence architecture diagram](docs/assets/policy-intelligence-architecture.png)
+
 This repository owns the backend API and the local full-stack Docker
 orchestration. The complete project is split into three side-by-side repos:
 
@@ -226,6 +228,19 @@ GET /api/v1/evaluations/golden-questions
 POST /api/v1/evaluations/run-golden-questions
 ```
 
+Near-duplicate retrieval stress test:
+
+```bash
+sh scripts/load-confusing-corpus.sh
+curl.exe -X POST http://localhost:8080/api/v1/evaluations/run-golden-questions
+```
+
+The confusing corpus lives in `docs/evaluation/confusing-corpus`. It contains
+closely related policies for contractor production access, employee production
+access, contractor sandbox data, vendor analytics data sharing, and employee
+break-glass access. Good retrieval should cite the policy that matches the
+actor, environment, data type, and approval path in the question.
+
 Governance headers for local/dev testing:
 
 ```text
@@ -432,6 +447,8 @@ Fill `.env.local` locally:
 ```text
 OPENAI_API_KEY=
 LLM_MODEL=gpt-5.5
+EMBEDDINGS_PROVIDER=local
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 Do not commit `.env.local`. It is ignored by Git.
@@ -750,6 +767,16 @@ sh scripts/start-dev.sh
 
 If `OPENAI_API_KEY` is not set, the advisor automatically falls back to the
 local extractive answer generator.
+
+Embedding generation defaults to the local hashing generator. To use OpenAI
+embeddings instead, keep your key in `.env.local` and set:
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+export EMBEDDINGS_PROVIDER="openai"
+export OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+sh scripts/start-dev.sh
+```
 
 Create a document:
 

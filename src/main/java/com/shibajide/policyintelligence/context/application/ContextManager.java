@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -191,7 +192,7 @@ public class ContextManager {
         if (normalized.isBlank()) {
             return Set.of();
         }
-        return Set.of(normalized.split("\\s+"));
+        return new LinkedHashSet<>(List.of(normalized.split("\\s+")));
     }
 
     private boolean isNearDuplicate(Set<String> current, List<Set<String>> existing) {

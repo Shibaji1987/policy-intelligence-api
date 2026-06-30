@@ -5,10 +5,12 @@ import com.shibajide.policyintelligence.embedding.application.EmbeddingVector;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnBean(EmbeddingModel.class)
+@ConditionalOnProperty(name = "app.embeddings.provider", havingValue = "spring-ai")
 public class SpringAiEmbeddingGenerator implements EmbeddingGenerator {
 
     private final EmbeddingModel embeddingModel;

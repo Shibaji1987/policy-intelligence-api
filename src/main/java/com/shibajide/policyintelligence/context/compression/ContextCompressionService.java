@@ -69,10 +69,13 @@ public class ContextCompressionService {
         if (value == null || value.isBlank()) {
             return Set.of();
         }
-        return Set.of(value.toLowerCase(Locale.ROOT)
+        var normalized = value.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9\\s]", " ")
                 .replaceAll("\\s+", " ")
-                .strip()
-                .split("\\s+"));
+                .strip();
+        if (normalized.isBlank()) {
+            return Set.of();
+        }
+        return new LinkedHashSet<>(List.of(normalized.split("\\s+")));
     }
 }

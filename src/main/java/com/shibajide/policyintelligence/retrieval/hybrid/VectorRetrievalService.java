@@ -3,6 +3,7 @@ package com.shibajide.policyintelligence.retrieval.hybrid;
 import com.shibajide.policyintelligence.embedding.application.EmbeddingGenerator;
 import com.shibajide.policyintelligence.embedding.application.EmbeddingVector;
 import com.shibajide.policyintelligence.retrieval.application.RetrievalFilters;
+import com.shibajide.policyintelligence.retrieval.application.RetrievalSupport;
 import com.shibajide.policyintelligence.retrieval.application.RetrievedChunk;
 import com.shibajide.policyintelligence.retrieval.infrastructure.VectorSearchRepository;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -10,12 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -48,106 +44,100 @@ public class VectorRetrievalService {
     }
 
     public VectorRetrievalResult retrieveWithMetadata(String query, int topK, RetrievalFilters filters) {
-        String effectiveQuery = validateQuery(query);
-        int effectiveTopK = validateTopK(topK);
-        RetrievalFilters effectiveFilters = filters == null ? RetrievalFilters.defaults() : filters;
-        String queryHash = queryHash(effectiveQuery);
-        Instant totalStarted = Instant.now();
-        long embeddingLatencyMs = 0;
-        long vectorDbLatencyMs = 0;
-        String embeddingModel = null;
-        int embeddingDimension = 0;
-        boolean embeddingCompleted = false;
+        VectorRetrievalRequest request = prepare(query, topK, filters);
+        VectorRetrievalTiming timing = new VectorRetrievalTiming(Instant.now());
 
-        LOGGER.info(
-                "Vector retrieval started queryHash={}, topK={}, filters={}",
-                queryHash,
-                effectiveTopK,
-                filtersApplied(effectiveFilters)
-        );
+        logStarted(request);
 
         try {
-            Instant embeddingStarted = Instant.now();
-            EmbeddingVector embedding = embeddingGenerator.embed(effectiveQuery);
-            embeddingLatencyMs = elapsedMs(embeddingStarted);
-            embeddingModel = embedding.model();
-            embeddingDimension = embedding.dimension();
-            validateEmbedding(embedding);
-            embeddingCompleted = true;
-
-            Instant vectorDbStarted = Instant.now();
-            List<RetrievedChunk> chunks = repository.vectorSearch(
-                    embedding.values(),
-                    effectiveQuery,
-                    effectiveTopK,
-                    effectiveFilters
-            );
-            vectorDbLatencyMs = elapsedMs(vectorDbStarted);
-            long totalLatencyMs = elapsedMs(totalStarted);
-            VectorRetrievalResult result = VectorRetrievalResult.success(
-                    chunks,
-                    queryHash,
-                    embeddingModel,
-                    embeddingDimension,
-                    effectiveTopK,
-                    effectiveFilters,
-                    embeddingLatencyMs,
-                    vectorDbLatencyMs,
-                    totalLatencyMs
-            );
+            VectorEmbedding embedding = embed(request, timing);
+            List<RetrievedChunk> chunks = searchVectorStore(request, embedding, timing);
+            VectorRetrievalResult result = success(request, embedding, chunks, timing);
             recordMetrics(result, false, false);
-            if (result.status() == RetrievalStatus.EMPTY) {
-                LOGGER.warn("Vector retrieval empty result queryHash={}, topK={}", queryHash, effectiveTopK);
-            }
-            LOGGER.info(
-                    "Vector retrieval completed queryHash={}, status={}, returnedChunks={}, embeddingLatencyMs={}, vectorDbLatencyMs={}, totalLatencyMs={}",
-                    queryHash,
-                    result.status(),
-                    result.returnedChunkCount(),
-                    embeddingLatencyMs,
-                    vectorDbLatencyMs,
-                    totalLatencyMs
-            );
+            logCompleted(result);
             return result;
         } catch (RuntimeException exception) {
-            long totalLatencyMs = elapsedMs(totalStarted);
-            boolean embeddingFailure = !embeddingCompleted;
-            boolean pgVectorFailure = embeddingCompleted && vectorDbLatencyMs == 0;
-            VectorRetrievalResult failure = VectorRetrievalResult.failure(
-                    queryHash,
-                    embeddingModel,
-                    embeddingDimension,
-                    effectiveTopK,
-                    effectiveFilters,
-                    embeddingLatencyMs,
-                    vectorDbLatencyMs,
-                    totalLatencyMs,
-                    safeMessage(exception)
-            );
+            boolean embeddingFailure = !timing.embeddingCompleted;
+            boolean pgVectorFailure = timing.embeddingCompleted && timing.vectorDbLatencyMs == 0;
+            VectorRetrievalResult failure = failure(request, timing, exception);
             recordMetrics(failure, embeddingFailure, pgVectorFailure);
-            LOGGER.warn(
-                    "Vector retrieval failed queryHash={}, embeddingFailure={}, pgVectorFailure={}, reason={}",
-                    queryHash,
-                    embeddingFailure,
-                    pgVectorFailure,
-                    failure.failureReason()
-            );
+            logFailed(failure, embeddingFailure, pgVectorFailure);
             return failure;
         }
     }
 
-    private String validateQuery(String query) {
-        if (query == null || query.isBlank()) {
-            throw new IllegalArgumentException("Vector retrieval query must not be blank");
-        }
-        return query.strip();
+    private VectorRetrievalRequest prepare(String query, int topK, RetrievalFilters filters) {
+        String effectiveQuery = RetrievalSupport.requireQuery(query, "Vector retrieval");
+        return new VectorRetrievalRequest(
+                effectiveQuery,
+                RetrievalSupport.queryHash(effectiveQuery),
+                RetrievalSupport.requirePositiveTopK(topK, MAX_TOP_K),
+                filters == null ? RetrievalFilters.defaults() : filters
+        );
     }
 
-    private int validateTopK(int topK) {
-        if (topK <= 0) {
-            throw new IllegalArgumentException("topK must be positive");
-        }
-        return Math.min(topK, MAX_TOP_K);
+    private VectorEmbedding embed(VectorRetrievalRequest request, VectorRetrievalTiming timing) {
+        Instant started = Instant.now();
+        EmbeddingVector embedding = embeddingGenerator.embed(request.query());
+        timing.embeddingLatencyMs = RetrievalSupport.elapsedMs(started);
+        validateEmbedding(embedding);
+        timing.embeddingModel = embedding.model();
+        timing.embeddingDimension = embedding.dimension();
+        timing.embeddingCompleted = true;
+        return new VectorEmbedding(embedding);
+    }
+
+    private List<RetrievedChunk> searchVectorStore(
+            VectorRetrievalRequest request,
+            VectorEmbedding embedding,
+            VectorRetrievalTiming timing
+    ) {
+        Instant started = Instant.now();
+        List<RetrievedChunk> chunks = repository.vectorSearch(
+                embedding.values(),
+                request.query(),
+                request.topK(),
+                request.filters()
+        );
+        timing.vectorDbLatencyMs = RetrievalSupport.elapsedMs(started);
+        return chunks;
+    }
+
+    private VectorRetrievalResult success(
+            VectorRetrievalRequest request,
+            VectorEmbedding embedding,
+            List<RetrievedChunk> chunks,
+            VectorRetrievalTiming timing
+    ) {
+        return VectorRetrievalResult.success(
+                chunks,
+                request.queryHash(),
+                embedding.model(),
+                embedding.dimension(),
+                request.topK(),
+                request.filters(),
+                timing.embeddingLatencyMs,
+                timing.vectorDbLatencyMs,
+                timing.totalLatencyMs()
+        );
+    }
+
+    private VectorRetrievalResult failure(
+            VectorRetrievalRequest request,
+            VectorRetrievalTiming timing,
+            RuntimeException exception
+    ) {
+        return VectorRetrievalResult.failure(
+                request.queryHash(),
+                timing.embeddingModel,
+                timing.embeddingDimension,
+                request.topK(),
+                request.filters(),
+                timing.embeddingLatencyMs,
+                timing.vectorDbLatencyMs,
+                timing.totalLatencyMs(),
+                RetrievalSupport.safeMessage(exception)
+        );
     }
 
     private void validateEmbedding(EmbeddingVector embedding) {
@@ -178,25 +168,82 @@ public class VectorRetrievalService {
         }
     }
 
-    private String queryHash(String query) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(query.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash).substring(0, 16);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is not available", exception);
+    private void logStarted(VectorRetrievalRequest request) {
+        LOGGER.info(
+                "Vector retrieval started queryHash={}, topK={}, filters={}",
+                request.queryHash(),
+                request.topK(),
+                RetrievalSupport.filterCacheKey(request.filters())
+        );
+    }
+
+    private void logCompleted(VectorRetrievalResult result) {
+        if (result.status() == RetrievalStatus.EMPTY) {
+            LOGGER.warn("Vector retrieval empty result queryHash={}, topK={}", result.queryHash(), result.requestedTopK());
+        }
+        LOGGER.info(
+                "Vector retrieval completed queryHash={}, status={}, returnedChunks={}, embeddingLatencyMs={}, vectorDbLatencyMs={}, totalLatencyMs={}",
+                result.queryHash(),
+                result.status(),
+                result.returnedChunkCount(),
+                result.embeddingLatencyMs(),
+                result.vectorDbLatencyMs(),
+                result.totalLatencyMs()
+        );
+    }
+
+    private void logFailed(VectorRetrievalResult failure, boolean embeddingFailure, boolean pgVectorFailure) {
+        LOGGER.warn(
+                "Vector retrieval failed queryHash={}, embeddingFailure={}, pgVectorFailure={}, reason={}",
+                failure.queryHash(),
+                embeddingFailure,
+                pgVectorFailure,
+                failure.failureReason()
+        );
+    }
+
+    private record VectorRetrievalRequest(
+            String query,
+            String queryHash,
+            int topK,
+            RetrievalFilters filters
+    ) {
+    }
+
+    private class VectorRetrievalTiming {
+        private final Instant totalStarted;
+        private long embeddingLatencyMs;
+        private long vectorDbLatencyMs;
+        private String embeddingModel;
+        private int embeddingDimension;
+        private boolean embeddingCompleted;
+
+        VectorRetrievalTiming(Instant totalStarted) {
+            this.totalStarted = totalStarted;
+        }
+
+        long totalLatencyMs() {
+            return RetrievalSupport.elapsedMs(totalStarted);
         }
     }
 
-    private String filtersApplied(RetrievalFilters filters) {
-        return filters.cacheKey();
-    }
+    private class VectorEmbedding {
+        private final EmbeddingVector embedding;
 
-    private String safeMessage(RuntimeException exception) {
-        return exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
-    }
+        VectorEmbedding(EmbeddingVector embedding) {
+            this.embedding = embedding;
+        }
 
-    private long elapsedMs(Instant started) {
-        return Duration.between(started, Instant.now()).toMillis();
+        String model() {
+            return embedding.model();
+        }
+
+        int dimension() {
+            return embedding.dimension();
+        }
+
+        float[] values() {
+            return embedding.values();
+        }
     }
 }

@@ -2,7 +2,7 @@ package com.shibajide.policyintelligence.embedding.infrastructure;
 
 import com.shibajide.policyintelligence.embedding.application.EmbeddingGenerator;
 import com.shibajide.policyintelligence.embedding.application.EmbeddingVector;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -11,7 +11,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Component
-@ConditionalOnMissingBean(EmbeddingGenerator.class)
+@ConditionalOnProperty(name = "app.embeddings.provider", havingValue = "local", matchIfMissing = true)
 public class HashingEmbeddingGenerator implements EmbeddingGenerator {
 
     public static final int DIMENSION = 1536;

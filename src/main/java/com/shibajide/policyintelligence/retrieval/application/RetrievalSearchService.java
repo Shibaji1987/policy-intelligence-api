@@ -44,45 +44,73 @@ public class RetrievalSearchService {
     }
 
     public RetrievalSearchResponse search(String query, Integer topK, RetrievalFilters filters) {
-        if (query == null || query.isBlank()) {
-            throw new IllegalArgumentException("Query must not be blank");
+        RetrievalSearchRequest request = request(query, topK, filters);
+        var cached = retrievalCache.get(request.cacheKey());
+        if (cached.isPresent()) {
+            return cachedResponse(cached.get());
         }
+        RetrievalSearchResponse response = searchUncached(request);
+        retrievalCache.put(request.cacheKey(), response);
+        return response;
+    }
+
+    private RetrievalSearchRequest request(String query, Integer topK, RetrievalFilters filters) {
+        String effectiveQuery = RetrievalSupport.requireQuery(query, "Retrieval search");
         RetrievalFilters effectiveFilters = filters == null ? RetrievalFilters.defaults() : filters;
         int effectiveTopK = topK == null ? DEFAULT_TOP_K : Math.clamp(topK, 1, MAX_TOP_K);
-        long corpusVersion = corpusStateRepository.findById((short) 1)
-                .orElseThrow()
-                .getCorpusVersion();
-        String cacheKey = query.strip().toLowerCase() + "|" + effectiveTopK + "|" + corpusVersion + "|" + effectiveFilters.cacheKey();
-        var cached = retrievalCache.get(cacheKey);
-        if (cached.isPresent()) {
-            var response = cached.get();
-            return new RetrievalSearchResponse(
-                    response.query(),
-                    response.requestedTopK(),
-                    response.returnedChunks(),
-                    response.embeddingModel(),
-                    response.embeddingDimension(),
-                    response.corpusVersion(),
-                    true,
-                    response.tokenUsage(),
-                    response.chunks()
-            );
-        }
-        var queryEmbedding = embeddingGenerator.embed(query);
-        var chunks = vectorSearchRepository.search(queryEmbedding.values(), query, effectiveTopK, effectiveFilters);
-        var response = new RetrievalSearchResponse(
-                query,
+        long corpusVersion = corpusVersion();
+        return new RetrievalSearchRequest(
+                effectiveQuery,
                 effectiveTopK,
+                effectiveFilters,
+                corpusVersion,
+                cacheKey(effectiveQuery, effectiveTopK, effectiveFilters, corpusVersion)
+        );
+    }
+
+    private RetrievalSearchResponse searchUncached(RetrievalSearchRequest request) {
+        var queryEmbedding = embeddingGenerator.embed(request.query());
+        var chunks = vectorSearchRepository.search(
+                queryEmbedding.values(),
+                request.query(),
+                request.topK(),
+                request.filters()
+        );
+        return new RetrievalSearchResponse(
+                request.query(),
+                request.topK(),
                 chunks.size(),
                 queryEmbedding.model(),
                 queryEmbedding.dimension(),
-                corpusVersion,
+                request.corpusVersion(),
                 false,
-                tokenUsage(query, chunks),
+                tokenUsage(request.query(), chunks),
                 chunks
         );
-        retrievalCache.put(cacheKey, response);
-        return response;
+    }
+
+    private RetrievalSearchResponse cachedResponse(RetrievalSearchResponse response) {
+        return new RetrievalSearchResponse(
+                response.query(),
+                response.requestedTopK(),
+                response.returnedChunks(),
+                response.embeddingModel(),
+                response.embeddingDimension(),
+                response.corpusVersion(),
+                true,
+                response.tokenUsage(),
+                response.chunks()
+        );
+    }
+
+    private long corpusVersion() {
+        return corpusStateRepository.findById((short) 1)
+                .orElseThrow()
+                .getCorpusVersion();
+    }
+
+    private String cacheKey(String query, int topK, RetrievalFilters filters, long corpusVersion) {
+        return query.toLowerCase() + "|" + topK + "|" + corpusVersion + "|" + filters.cacheKey();
     }
 
     private RetrievalTokenUsage tokenUsage(String query, java.util.List<RetrievedChunk> chunks) {
@@ -101,5 +129,14 @@ public class RetrievalSearchService {
                 TokenEstimator.STRATEGY,
                 billingEstimator.estimate(queryTokens + chunkTokens, 0)
         );
+    }
+
+    private record RetrievalSearchRequest(
+            String query,
+            int topK,
+            RetrievalFilters filters,
+            long corpusVersion,
+            String cacheKey
+    ) {
     }
 }

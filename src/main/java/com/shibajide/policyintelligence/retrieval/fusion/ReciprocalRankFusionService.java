@@ -1,6 +1,7 @@
 package com.shibajide.policyintelligence.retrieval.fusion;
 
 import com.shibajide.policyintelligence.retrieval.application.RetrievalFilters;
+import com.shibajide.policyintelligence.retrieval.application.RetrievalSupport;
 import com.shibajide.policyintelligence.retrieval.application.RetrievedChunk;
 import com.shibajide.policyintelligence.retrieval.hybrid.RetrievalSource;
 import com.shibajide.policyintelligence.retrieval.hybrid.RetrieverExecutionResult;
@@ -63,45 +64,91 @@ public class ReciprocalRankFusionService {
     ) {
         validateInputs(vectorResults, keywordResults, limit);
         long started = System.nanoTime();
+        CandidateSet candidates = collectCandidates(vectorResults, keywordResults);
+        List<RetrievedChunk> fused = fuseCandidates(candidates, limit);
+        FusionTrace trace = trace(traceId, vectorResults, keywordResults, candidates, fused, limit, filters, started);
+
+        recordMetrics(trace);
+        logCompleted(trace);
+        return new FusionResult(fused, trace);
+    }
+
+    private CandidateSet collectCandidates(List<RetrievedChunk> vectorResults, List<RetrievedChunk> keywordResults) {
         var candidates = new LinkedHashMap<UUID, FusionCandidate>();
-        int duplicateCount = 0;
-        for (int index = 0; index < vectorResults.size(); index++) {
-            RetrievedChunk chunk = vectorResults.get(index);
-            int rank = index + 1;
-            candidates.put(chunk.chunkId(), new FusionCandidate(chunk, rank, null, chunk.similarityScore(), 0));
+        addVectorCandidates(candidates, vectorResults);
+        int duplicateCount = addKeywordCandidates(candidates, keywordResults);
+        return new CandidateSet(candidates, duplicateCount);
+    }
+
+    private void addVectorCandidates(Map<UUID, FusionCandidate> candidates, List<RetrievedChunk> chunks) {
+        for (int index = 0; index < chunks.size(); index++) {
+            RetrievedChunk chunk = chunks.get(index);
+            candidates.put(chunk.chunkId(), new FusionCandidate(chunk, index + 1, null, chunk.similarityScore(), 0));
         }
-        for (int index = 0; index < keywordResults.size(); index++) {
-            RetrievedChunk keywordChunk = keywordResults.get(index);
-            int rank = index + 1;
-            if (candidates.containsKey(keywordChunk.chunkId())) {
+    }
+
+    private int addKeywordCandidates(Map<UUID, FusionCandidate> candidates, List<RetrievedChunk> chunks) {
+        int duplicateCount = 0;
+        for (int index = 0; index < chunks.size(); index++) {
+            RetrievedChunk chunk = chunks.get(index);
+            if (candidates.containsKey(chunk.chunkId())) {
                 duplicateCount++;
             }
-            candidates.merge(
-                    keywordChunk.chunkId(),
-                    new FusionCandidate(keywordChunk, null, rank, 0, keywordChunk.keywordScore()),
-                    (existing, incoming) -> new FusionCandidate(
-                            existing.chunk(),
-                            existing.vectorRank(),
-                            incoming.keywordRank(),
-                            existing.vectorScore(),
-                            incoming.keywordScore()
-                    )
-            );
+            candidates.merge(chunk.chunkId(), keywordCandidate(chunk, index + 1), this::mergeCandidate);
         }
+        return duplicateCount;
+    }
 
-        List<RetrievedChunk> fused = candidates.values().stream()
-                .map(candidate -> {
-                    double rrfScore = score(candidate.vectorRank()) + score(candidate.keywordRank());
-                    String source = candidate.vectorRank() != null && candidate.keywordRank() != null
-                            ? "BOTH"
-                            : candidate.vectorRank() != null ? "VECTOR" : "KEYWORD";
-                    return candidate.chunk().withFusion(candidate.vectorRank(), candidate.keywordRank(), rrfScore, source);
-                })
+    private FusionCandidate keywordCandidate(RetrievedChunk chunk, int rank) {
+        return new FusionCandidate(chunk, null, rank, 0, chunk.keywordScore());
+    }
+
+    private FusionCandidate mergeCandidate(FusionCandidate existing, FusionCandidate incoming) {
+        return new FusionCandidate(
+                existing.chunk(),
+                existing.vectorRank(),
+                incoming.keywordRank(),
+                existing.vectorScore(),
+                incoming.keywordScore()
+        );
+    }
+
+    private List<RetrievedChunk> fuseCandidates(CandidateSet candidates, int limit) {
+        return candidates.byChunkId().values().stream()
+                .map(this::toFusedChunk)
                 .sorted(fusionComparator())
                 .limit(limit)
                 .toList();
-        long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-        FusionTrace trace = new FusionTrace(
+    }
+
+    private RetrievedChunk toFusedChunk(FusionCandidate candidate) {
+        double rrfScore = score(candidate.vectorRank()) + score(candidate.keywordRank());
+        return candidate.chunk().withFusion(
+                candidate.vectorRank(),
+                candidate.keywordRank(),
+                rrfScore,
+                source(candidate)
+        );
+    }
+
+    private String source(FusionCandidate candidate) {
+        if (candidate.vectorRank() != null && candidate.keywordRank() != null) {
+            return "BOTH";
+        }
+        return candidate.vectorRank() != null ? "VECTOR" : "KEYWORD";
+    }
+
+    private FusionTrace trace(
+            UUID traceId,
+            List<RetrievedChunk> vectorResults,
+            List<RetrievedChunk> keywordResults,
+            CandidateSet candidates,
+            List<RetrievedChunk> fused,
+            int limit,
+            RetrievalFilters filters,
+            long started
+    ) {
+        return new FusionTrace(
                 traceId,
                 "RECIPROCAL_RANK_FUSION",
                 properties.rrfK(),
@@ -109,25 +156,11 @@ public class ReciprocalRankFusionService {
                 vectorResults.size(),
                 keywordResults.size(),
                 candidates.size(),
-                duplicateCount,
+                candidates.duplicateCount(),
                 fused.size(),
-                latencyMs,
-                filtersApplied(filters)
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started),
+                filters == null ? Map.of() : RetrievalSupport.filtersApplied(filters)
         );
-        recordMetrics(trace);
-        LOGGER.info(
-                "Fusion completed traceId={}, algorithm={}, rrfK={}, vectorCount={}, keywordCount={}, uniqueCandidates={}, duplicates={}, outputCount={}, latencyMs={}",
-                traceId,
-                trace.algorithm(),
-                trace.rrfK(),
-                trace.vectorInputCount(),
-                trace.keywordInputCount(),
-                trace.uniqueCandidateCount(),
-                trace.duplicateCount(),
-                trace.outputCount(),
-                trace.latencyMs()
-        );
-        return new FusionResult(fused, trace);
     }
 
     private void validateOutcomes(List<RetrieverExecutionResult> outcomes) {
@@ -178,24 +211,31 @@ public class ReciprocalRankFusionService {
         meterRegistry.counter("rag.fusion.output.count").increment(trace.outputCount());
     }
 
-    private Map<String, String> filtersApplied(RetrievalFilters filters) {
-        if (filters == null) {
-            return Map.of();
-        }
-        return Map.of(
-                "tenantId", value(filters.tenantId()),
-                "department", value(filters.department()),
-                "region", value(filters.region()),
-                "documentType", value(filters.documentType()),
-                "classification", value(filters.classification())
+    private void logCompleted(FusionTrace trace) {
+        LOGGER.info(
+                "Fusion completed traceId={}, algorithm={}, rrfK={}, vectorCount={}, keywordCount={}, uniqueCandidates={}, duplicates={}, outputCount={}, latencyMs={}",
+                trace.traceId(),
+                trace.algorithm(),
+                trace.rrfK(),
+                trace.vectorInputCount(),
+                trace.keywordInputCount(),
+                trace.uniqueCandidateCount(),
+                trace.duplicateCount(),
+                trace.outputCount(),
+                trace.latencyMs()
         );
-    }
-
-    private String value(String value) {
-        return value == null ? "*" : value;
     }
 
     private double score(Integer rank) {
         return rank == null ? 0 : 1.0 / (properties.rrfK() + rank);
+    }
+
+    private record CandidateSet(
+            LinkedHashMap<UUID, FusionCandidate> byChunkId,
+            int duplicateCount
+    ) {
+        int size() {
+            return byChunkId.size();
+        }
     }
 }

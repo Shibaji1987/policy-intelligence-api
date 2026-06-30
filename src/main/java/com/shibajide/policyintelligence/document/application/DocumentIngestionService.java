@@ -51,14 +51,7 @@ public class DocumentIngestionService {
     @Transactional
     public DocumentIngestionResult create(IngestDocumentCommand command) {
         validate(command);
-        var document = documentRepository.saveAndFlush(new Document(
-                command.title().trim(),
-                command.tenantId(),
-                command.department(),
-                command.region(),
-                command.documentType(),
-                command.classification()
-        ));
+        Document document = createDocument(command);
         return createVersion(document, command);
     }
 
@@ -71,64 +64,126 @@ public class DocumentIngestionService {
     }
 
     private DocumentIngestionResult createVersion(Document document, IngestDocumentCommand command) {
+        IngestionPlan plan = plan(document, command);
+        DocumentVersion version = saveVersion(plan);
+        var chunks = replaceActiveChunks(plan, version);
+
+        finalizeIngestion(document);
+        long corpusVersion = corpusStateRepository.lockSingleton().increment();
+        return result(document, version, plan.versionNumber(), chunks.size(), corpusVersion);
+    }
+
+    private Document createDocument(IngestDocumentCommand command) {
+        return documentRepository.saveAndFlush(new Document(
+                command.title().trim(),
+                command.tenantId(),
+                command.department(),
+                command.region(),
+                command.documentType(),
+                command.classification()
+        ));
+    }
+
+    private IngestionPlan plan(Document document, IngestDocumentCommand command) {
         String hash = sha256(command.content());
+        ensureNewContent(document, hash);
+        return new IngestionPlan(
+                document,
+                command,
+                hash,
+                extractChunks(command),
+                versionRepository.countByDocumentId(document.getId()) + 1,
+                effectiveOverlap(command)
+        );
+    }
+
+    private void ensureNewContent(Document document, String hash) {
         versionRepository.findTopByDocumentIdOrderByVersionNumberDesc(document.getId())
                 .filter(latest -> latest.getContentHash().equals(hash))
                 .ifPresent(latest -> {
                     throw new DuplicateDocumentVersionException();
                 });
+    }
 
+    private java.util.List<String> extractChunks(IngestDocumentCommand command) {
         String text = contentExtractor.extract(
                 command.originalFilename(),
                 command.mediaType(),
                 command.content()
         );
-        var chunker = chunkerRegistry.get(command.chunkingStrategy());
-        var texts = chunker.chunk(text, command.chunkSize(), effectiveOverlap(command));
-        int versionNumber = versionRepository.countByDocumentId(document.getId()) + 1;
+        return chunkerRegistry.get(command.chunkingStrategy())
+                .chunk(text, command.chunkSize(), effectiveOverlap(command));
+    }
 
-        var version = versionRepository.saveAndFlush(new DocumentVersion(
-                document.getId(),
-                versionNumber,
-                command.originalFilename(),
-                command.mediaType(),
-                hash,
-                command.chunkingStrategy(),
-                command.chunkSize(),
-                effectiveOverlap(command)
+    private DocumentVersion saveVersion(IngestionPlan plan) {
+        return versionRepository.saveAndFlush(new DocumentVersion(
+                plan.document().getId(),
+                plan.versionNumber(),
+                plan.command().originalFilename(),
+                plan.command().mediaType(),
+                plan.contentHash(),
+                plan.command().chunkingStrategy(),
+                plan.command().chunkSize(),
+                plan.overlap()
         ));
+    }
 
-        chunkRepository.deactivateActiveChunks(document.getId());
-        var chunks = IntStream.range(0, texts.size())
-                .mapToObj(index -> new DocumentChunk(
-                        document.getId(),
-                        version.getId(),
-                        index,
-                        texts.get(index),
-                        Map.of(
-                                "originalFilename", command.originalFilename(),
-                                "version", versionNumber,
-                                "chunkingStrategy", command.chunkingStrategy().name(),
-                                "tenantId", document.getTenantId(),
-                                "department", document.getDepartment() == null ? "" : document.getDepartment(),
-                                "region", document.getRegion() == null ? "" : document.getRegion(),
-                                "documentType", document.getDocumentType() == null ? "" : document.getDocumentType(),
-                                "classification", document.getClassification() == null ? "" : document.getClassification()
-                        )
-                ))
+    private java.util.List<DocumentChunk> replaceActiveChunks(IngestionPlan plan, DocumentVersion version) {
+        chunkRepository.deactivateActiveChunks(plan.document().getId());
+        var chunks = IntStream.range(0, plan.chunkTexts().size())
+                .mapToObj(index -> chunk(plan, version, index))
                 .toList();
         chunkRepository.saveAllAndFlush(chunks);
+        return chunks;
+    }
+
+    private DocumentChunk chunk(IngestionPlan plan, DocumentVersion version, int index) {
+        return new DocumentChunk(
+                plan.document().getId(),
+                version.getId(),
+                index,
+                plan.chunkTexts().get(index),
+                metadata(plan)
+        );
+    }
+
+    private Map<String, Object> metadata(IngestionPlan plan) {
+        Document document = plan.document();
+        return Map.of(
+                "originalFilename", plan.command().originalFilename(),
+                "version", plan.versionNumber(),
+                "chunkingStrategy", plan.command().chunkingStrategy().name(),
+                "tenantId", document.getTenantId(),
+                "department", nullToEmpty(document.getDepartment()),
+                "region", nullToEmpty(document.getRegion()),
+                "documentType", nullToEmpty(document.getDocumentType()),
+                "classification", nullToEmpty(document.getClassification())
+        );
+    }
+
+    private void finalizeIngestion(Document document) {
         embeddingService.embedPendingChunks();
         document.touch();
-        long corpusVersion = corpusStateRepository.lockSingleton().increment();
+    }
 
+    private DocumentIngestionResult result(
+            Document document,
+            DocumentVersion version,
+            int versionNumber,
+            int chunkCount,
+            long corpusVersion
+    ) {
         return new DocumentIngestionResult(
                 document.getId(),
                 version.getId(),
                 versionNumber,
-                chunks.size(),
+                chunkCount,
                 corpusVersion
         );
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private int effectiveOverlap(IngestDocumentCommand command) {
@@ -155,5 +210,15 @@ public class DocumentIngestionService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is not available", exception);
         }
+    }
+
+    private record IngestionPlan(
+            Document document,
+            IngestDocumentCommand command,
+            String contentHash,
+            java.util.List<String> chunkTexts,
+            int versionNumber,
+            int overlap
+    ) {
     }
 }

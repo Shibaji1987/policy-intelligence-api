@@ -1,6 +1,7 @@
 package com.shibajide.policyintelligence.retrieval.hybrid;
 
 import com.shibajide.policyintelligence.retrieval.application.RetrievalFilters;
+import com.shibajide.policyintelligence.retrieval.application.RetrievalSupport;
 import com.shibajide.policyintelligence.retrieval.application.RetrievedChunk;
 import com.shibajide.policyintelligence.retrieval.infrastructure.VectorSearchRepository;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -8,12 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -44,88 +40,74 @@ public class KeywordRetrievalService {
     }
 
     public KeywordRetrievalResult retrieveWithMetadata(KeywordRetrievalRequest request) {
-        String effectiveQuery = validateQuery(request.query());
-        int effectiveTopK = validateTopK(request.topK());
-        RetrievalFilters effectiveFilters = request.filters();
-        String queryHash = queryHash(effectiveQuery);
+        KeywordRetrievalExecution execution = prepare(request);
         Instant started = Instant.now();
 
-        LOGGER.info(
-                "Keyword retrieval started traceId={}, queryHash={}, topK={}, filters={}, searchMode={}",
-                request.traceId(),
-                queryHash,
-                effectiveTopK,
-                effectiveFilters.cacheKey(),
-                request.searchMode()
-        );
+        logStarted(execution);
 
         try {
-            List<RetrievedChunk> chunks = repository.keywordSearch(effectiveQuery, effectiveTopK, effectiveFilters);
-            long latencyMs = elapsedMs(started);
-            KeywordRetrievalResult result = KeywordRetrievalResult.success(
-                    request.traceId(),
-                    chunks,
-                    queryHash,
-                    request.searchMode(),
-                    effectiveTopK,
-                    effectiveFilters,
-                    latencyMs
-            );
+            List<RetrievedChunk> chunks = search(execution);
+            KeywordRetrievalResult result = success(execution, chunks, started);
             recordMetrics(result);
-            if (result.status() == RetrievalStatus.EMPTY) {
-                LOGGER.warn(
-                        "Keyword retrieval empty result traceId={}, queryHash={}, topK={}",
-                        request.traceId(),
-                        queryHash,
-                        effectiveTopK
-                );
-            }
-            LOGGER.info(
-                    "Keyword retrieval completed traceId={}, queryHash={}, status={}, resultCount={}, latencyMs={}, searchMode={}, rankingFunction={}",
-                    request.traceId(),
-                    queryHash,
-                    result.status(),
-                    result.returnedChunkCount(),
-                    latencyMs,
-                    result.searchMode(),
-                    result.rankingFunction()
-            );
+            logCompleted(result);
             return result;
         } catch (RuntimeException exception) {
-            long latencyMs = elapsedMs(started);
-            KeywordRetrievalResult failure = KeywordRetrievalResult.failure(
-                    request.traceId(),
-                    queryHash,
-                    request.searchMode(),
-                    effectiveTopK,
-                    effectiveFilters,
-                    latencyMs,
-                    safeMessage(exception)
-            );
+            KeywordRetrievalResult failure = failure(execution, started, exception);
             recordMetrics(failure);
-            LOGGER.warn(
-                    "Keyword retrieval failed traceId={}, queryHash={}, searchMode={}, reason={}",
-                    request.traceId(),
-                    queryHash,
-                    request.searchMode(),
-                    failure.failureReason()
-            );
+            logFailed(failure);
             return failure;
         }
     }
 
-    private String validateQuery(String query) {
-        if (query == null || query.isBlank()) {
-            throw new IllegalArgumentException("Keyword retrieval query must not be blank");
-        }
-        return query.strip();
+    private KeywordRetrievalExecution prepare(KeywordRetrievalRequest request) {
+        String query = RetrievalSupport.requireQuery(request.query(), "Keyword retrieval");
+        return new KeywordRetrievalExecution(
+                request,
+                query,
+                RetrievalSupport.queryHash(query),
+                RetrievalSupport.requirePositiveTopK(request.topK(), MAX_TOP_K),
+                request.filters()
+        );
     }
 
-    private int validateTopK(int topK) {
-        if (topK <= 0) {
-            throw new IllegalArgumentException("topK must be positive");
-        }
-        return Math.min(topK, MAX_TOP_K);
+    private List<RetrievedChunk> search(KeywordRetrievalExecution execution) {
+        return repository.keywordSearch(
+                execution.query(),
+                execution.topK(),
+                execution.filters()
+        );
+    }
+
+    private KeywordRetrievalResult success(
+            KeywordRetrievalExecution execution,
+            List<RetrievedChunk> chunks,
+            Instant started
+    ) {
+        return KeywordRetrievalResult.success(
+                execution.traceId(),
+                chunks,
+                execution.queryHash(),
+                execution.searchMode(),
+                execution.topK(),
+                execution.filters(),
+                RetrievalSupport.elapsedMs(started)
+        );
+    }
+
+    private KeywordRetrievalResult failure(
+            KeywordRetrievalExecution execution,
+            Instant started,
+            RuntimeException exception
+    ) {
+        return KeywordRetrievalResult.failure(
+                execution.traceId(),
+                execution.queryHash(),
+                execution.searchMode(),
+                execution.topK(),
+                execution.filters(),
+                RetrievalSupport.elapsedMs(started),
+                RetrievalSupport.safeMessage(exception)
+        );
     }
 
     private void recordMetrics(KeywordRetrievalResult result) {
@@ -139,21 +121,61 @@ public class KeywordRetrievalService {
         }
     }
 
-    private String queryHash(String query) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(query.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash).substring(0, 16);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is not available", exception);
+    private void logStarted(KeywordRetrievalExecution execution) {
+        LOGGER.info(
+                "Keyword retrieval started traceId={}, queryHash={}, topK={}, filters={}, searchMode={}",
+                execution.traceId(),
+                execution.queryHash(),
+                execution.topK(),
+                execution.filters().cacheKey(),
+                execution.searchMode()
+        );
+    }
+
+    private void logCompleted(KeywordRetrievalResult result) {
+        if (result.status() == RetrievalStatus.EMPTY) {
+            LOGGER.warn(
+                    "Keyword retrieval empty result traceId={}, queryHash={}, topK={}",
+                    result.traceId(),
+                    result.queryHash(),
+                    result.requestedTopK()
+            );
         }
+        LOGGER.info(
+                "Keyword retrieval completed traceId={}, queryHash={}, status={}, resultCount={}, latencyMs={}, searchMode={}, rankingFunction={}",
+                result.traceId(),
+                result.queryHash(),
+                result.status(),
+                result.returnedChunkCount(),
+                result.latencyMs(),
+                result.searchMode(),
+                result.rankingFunction()
+        );
     }
 
-    private String safeMessage(RuntimeException exception) {
-        return exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
+    private void logFailed(KeywordRetrievalResult failure) {
+        LOGGER.warn(
+                "Keyword retrieval failed traceId={}, queryHash={}, searchMode={}, reason={}",
+                failure.traceId(),
+                failure.queryHash(),
+                failure.searchMode(),
+                failure.failureReason()
+        );
     }
 
-    private long elapsedMs(Instant started) {
-        return Duration.between(started, Instant.now()).toMillis();
+    private record KeywordRetrievalExecution(
+            KeywordRetrievalRequest request,
+            String query,
+            String queryHash,
+            int topK,
+            RetrievalFilters filters
+    ) {
+        java.util.UUID traceId() {
+            return request.traceId();
+        }
+
+        String searchMode() {
+            return request.searchMode();
+        }
     }
 }

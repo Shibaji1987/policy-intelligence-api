@@ -49,13 +49,21 @@ public class RetrievalEvaluationService {
                 ? 0
                 : (double) keywordMatches / goldenQuestion.expectedAnswerKeywords().size();
         double citationAccuracy = answer.sources().isEmpty() ? 0 : 1;
+        if (citationAccuracy > 0 && (!goldenQuestion.expectedDocumentIds().isEmpty() || !goldenQuestion.expectedSourceHints().isEmpty())) {
+            citationAccuracy = answer.sources().stream()
+                    .anyMatch(source -> metricCalculator.matches(
+                            source,
+                            goldenQuestion.expectedDocumentIds(),
+                            goldenQuestion.expectedSourceHints()
+                    )) ? 1 : 0;
+        }
         return new EvaluationResult(
                 goldenQuestion.id(),
                 answer.traceId(),
-                metricCalculator.recallAt(answer.sources(), goldenQuestion.expectedDocumentIds(), 5),
-                metricCalculator.recallAt(answer.sources(), goldenQuestion.expectedDocumentIds(), 10),
-                metricCalculator.mrr(answer.sources(), goldenQuestion.expectedDocumentIds()),
-                metricCalculator.precisionAt(answer.sources(), goldenQuestion.expectedDocumentIds(), 5),
+                metricCalculator.recallAt(answer.sources(), goldenQuestion.expectedDocumentIds(), goldenQuestion.expectedSourceHints(), 5),
+                metricCalculator.recallAt(answer.sources(), goldenQuestion.expectedDocumentIds(), goldenQuestion.expectedSourceHints(), 10),
+                metricCalculator.mrr(answer.sources(), goldenQuestion.expectedDocumentIds(), goldenQuestion.expectedSourceHints()),
+                metricCalculator.precisionAt(answer.sources(), goldenQuestion.expectedDocumentIds(), goldenQuestion.expectedSourceHints(), 5),
                 citationAccuracy,
                 answerGroundedness,
                 Math.min(citationAccuracy, answerGroundedness),

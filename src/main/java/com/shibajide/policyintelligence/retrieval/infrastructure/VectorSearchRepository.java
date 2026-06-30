@@ -52,10 +52,10 @@ public class VectorSearchRepository {
                               AND chunk.embedding_status = 'COMPLETED'
                               AND chunk.embedding IS NOT NULL
                               AND document.tenant_id = ?
-                              AND (? IS NULL OR document.department = ?)
-                              AND (? IS NULL OR document.region = ?)
-                              AND (? IS NULL OR document.document_type = ?)
-                              AND (? IS NULL OR document.classification = ?)
+                              AND (?::text IS NULL OR document.department = ?::text)
+                              AND (?::text IS NULL OR document.region = ?::text)
+                              AND (?::text IS NULL OR document.document_type = ?::text)
+                              AND (?::text IS NULL OR document.classification = ?::text)
                         )
                         SELECT
                             *,
@@ -127,10 +127,10 @@ public class VectorSearchRepository {
                         WHERE chunk.active = true
                           AND chunk.embedding_status = 'COMPLETED'
                           AND document.tenant_id = ?
-                          AND (? IS NULL OR document.department = ?)
-                          AND (? IS NULL OR document.region = ?)
-                          AND (? IS NULL OR document.document_type = ?)
-                          AND (? IS NULL OR document.classification = ?)
+                          AND (?::text IS NULL OR document.department = ?::text)
+                          AND (?::text IS NULL OR document.region = ?::text)
+                          AND (?::text IS NULL OR document.document_type = ?::text)
+                          AND (?::text IS NULL OR document.classification = ?::text)
                           AND chunk.search_vector @@ plainto_tsquery('english', ?)
                         ORDER BY keyword_score DESC
                         LIMIT ?

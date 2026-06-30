@@ -27,39 +27,49 @@ public class QueryExpansionService {
         Instant started = Instant.now();
         String baseQuery = request.baseQuery() == null ? "" : request.baseQuery().strip();
         if (baseQuery.isBlank()) {
-            return new QueryExpansionResult(
-                    baseQuery,
-                    List.of(),
-                    "RULE_BASED_CONFIGURABLE",
-                    Duration.between(started, Instant.now()).toMillis(),
-                    "EMPTY_INPUT"
-            );
+            return result(baseQuery, List.of(), started, "EMPTY_INPUT");
         }
+
+        List<GeneratedQuery> generatedQueries = generatedQueries(baseQuery);
+        return result(baseQuery, generatedQueries, started, generatedQueries.isEmpty() ? "EMPTY" : "COMPLETED");
+    }
+
+    private List<GeneratedQuery> generatedQueries(String baseQuery) {
         var deduped = new LinkedHashMap<String, GeneratedQuery>();
-        add(deduped, new GeneratedQuery(
+        add(deduped, baseQuery(baseQuery));
+        strategies.forEach(strategy -> strategy.expand(baseQuery).forEach(generated -> add(deduped, generated)));
+        return ranked(deduped);
+    }
+
+    private GeneratedQuery baseQuery(String baseQuery) {
+        return new GeneratedQuery(
                 baseQuery,
                 "direct semantic match",
                 "BASE_QUERY",
                 0.95
-        ));
+        );
+    }
 
-        for (QueryExpansionStrategy strategy : strategies) {
-            for (GeneratedQuery generatedQuery : strategy.expand(baseQuery)) {
-                add(deduped, generatedQuery);
-            }
-        }
-
-        List<GeneratedQuery> generatedQueries = deduped.values().stream()
+    private List<GeneratedQuery> ranked(LinkedHashMap<String, GeneratedQuery> deduped) {
+        return deduped.values().stream()
                 .filter(query -> !query.query().isBlank())
                 .sorted(Comparator.comparing(GeneratedQuery::confidence).reversed())
                 .limit(properties.maxQueries())
                 .toList();
+    }
+
+    private QueryExpansionResult result(
+            String baseQuery,
+            List<GeneratedQuery> generatedQueries,
+            Instant started,
+            String status
+    ) {
         return new QueryExpansionResult(
                 baseQuery,
                 generatedQueries,
                 "RULE_BASED_CONFIGURABLE",
                 Duration.between(started, Instant.now()).toMillis(),
-                generatedQueries.isEmpty() ? "EMPTY" : "COMPLETED"
+                status
         );
     }
 

@@ -35,6 +35,33 @@ public class GoldenQuestionRepository {
                         List.of(),
                         List.of("approval", "exception", "evidence"),
                         List.of()
+                ),
+                new GoldenQuestion(
+                        "confusing-contractor-production-customer-data",
+                        "Can contractors access production customer data during emergency support?",
+                        List.of("Contractor Production Customer Data Access Standard"),
+                        "The answer should distinguish contractor production access from employee access and sandbox access.",
+                        List.of(),
+                        List.of("contractor", "production", "data owner approval", "emergency"),
+                        List.of()
+                ),
+                new GoldenQuestion(
+                        "confusing-contractor-sandbox-vs-production",
+                        "Can contractors use customer data in a sandbox environment?",
+                        List.of("Contractor Sandbox Customer Data Handling Standard"),
+                        "The answer should select sandbox masking rules, not production access rules.",
+                        List.of(),
+                        List.of("sandbox", "masked", "contractor"),
+                        List.of()
+                ),
+                new GoldenQuestion(
+                        "confusing-employee-production-vs-contractor",
+                        "Do employees need the same approval as contractors for scheduled production customer data access?",
+                        List.of("Employee Production Customer Data Access Standard"),
+                        "The answer should cite employee scheduled access rules, not contractor emergency access rules.",
+                        List.of(),
+                        List.of("employee", "scheduled", "manager approval"),
+                        List.of()
                 )
         );
     }
