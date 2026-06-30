@@ -1,6 +1,7 @@
 package com.shibajide.policyintelligence.evaluation.application;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Repository;
@@ -13,8 +14,8 @@ public class GoldenQuestionRepository {
 
     private final List<GoldenQuestion> goldenQuestions;
 
-    public GoldenQuestionRepository(YAMLMapper yamlMapper) {
-        this.goldenQuestions = load(yamlMapper);
+    public GoldenQuestionRepository() {
+        this.goldenQuestions = load(yamlMapper());
     }
 
     public List<GoldenQuestion> findAll() {
@@ -28,5 +29,11 @@ public class GoldenQuestionRepository {
         } catch (IOException exception) {
             throw new IllegalStateException("Could not load golden questions", exception);
         }
+    }
+
+    private YAMLMapper yamlMapper() {
+        return YAMLMapper.builder()
+                .propertyNamingStrategy(PropertyNamingStrategies.LOWER_CAMEL_CASE)
+                .build();
     }
 }
