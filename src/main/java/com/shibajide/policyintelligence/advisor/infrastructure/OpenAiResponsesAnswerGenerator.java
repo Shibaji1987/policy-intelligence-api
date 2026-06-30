@@ -42,7 +42,7 @@ public class OpenAiResponsesAnswerGenerator implements AnswerGenerator {
             ExtractiveAnswerGenerator fallback,
             @Value("${app.llm.base-url:https://api.openai.com/v1}") String baseUrl,
             @Value("${app.llm.api-key:}") String apiKey,
-            @Value("${app.llm.model:gpt-5.5}") String model,
+            @Value("${app.llm.model:gpt-4o}") String model,
             @Value("${app.llm.enabled:true}") boolean enabled
     ) {
         this.restClient = builder

@@ -251,11 +251,30 @@ X-Allowed-Regions: Global,Canada
 X-Allowed-Classifications: Internal,Restricted
 ```
 
-By default, header scopes are advisory so the local demo remains frictionless.
-Set this to enforce allowed metadata scopes:
+Header scopes are enforced by default. If a request asks for a restricted
+metadata value, the value must appear in the matching `X-Allowed-*` header.
+For frictionless local-only demos, this can be disabled explicitly:
 
 ```text
-SECURITY_ENFORCE_HEADER_SCOPES=true
+SECURITY_ENFORCE_HEADER_SCOPES=false
+```
+
+JWT API authentication is available through Spring Security. Local Docker keeps
+it disabled unless you opt in:
+
+```text
+SECURITY_ENABLED=true
+SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://your-issuer.example.com/
+```
+
+When enabled, the main API role boundaries are:
+
+```text
+ROLE_DOCUMENT_ADMIN  -> document ingestion, embeddings, cache operations
+ROLE_ADVISOR_USER    -> advisor, retrieval, traces, document read APIs
+ROLE_EVALUATION_USER -> evaluation APIs
+ROLE_ACTUATOR_ADMIN  -> protected actuator endpoints
+ROLE_API_DOCS        -> Swagger/OpenAPI UI
 ```
 
 Embedding operations:
@@ -371,10 +390,9 @@ Implemented:
 
 Not implemented yet:
 
-- user authentication and authorization
 - document-level permissions
-- tenant isolation
 - restricted policy visibility by user
+- PostgreSQL row-level security
 - object storage for original uploaded files
 - production secrets manager
 - cloud Kubernetes manifests

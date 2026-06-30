@@ -30,7 +30,7 @@ public class LlmQueryRewriteStrategy implements QueryRewriteStrategy {
             QueryRewritePromptBuilder promptBuilder,
             @Value("${app.llm.base-url:https://api.openai.com/v1}") String baseUrl,
             @Value("${app.llm.api-key:}") String apiKey,
-            @Value("${app.llm.model:gpt-5.5}") String model,
+            @Value("${app.llm.model:gpt-4o}") String model,
             @Value("${app.query-rewrite.llm-enabled:false}") boolean enabled
     ) {
         this.restClient = builder.baseUrl(baseUrl).requestFactory(requestFactory()).build();

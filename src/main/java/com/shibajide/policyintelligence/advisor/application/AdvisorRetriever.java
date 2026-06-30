@@ -2,9 +2,9 @@ package com.shibajide.policyintelligence.advisor.application;
 
 import com.shibajide.policyintelligence.retrieval.application.RetrievalFilters;
 import com.shibajide.policyintelligence.retrieval.application.RetrievedChunk;
+import com.shibajide.policyintelligence.retrieval.application.ChunkNeighborService;
 import com.shibajide.policyintelligence.retrieval.hybrid.HybridSearchResult;
 import com.shibajide.policyintelligence.retrieval.hybrid.HybridRetrievalService;
-import com.shibajide.policyintelligence.retrieval.infrastructure.VectorSearchRepository;
 import com.shibajide.policyintelligence.retrieval.rerank.Reranker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +24,7 @@ class AdvisorRetriever {
 
     private final HybridRetrievalService hybridRetrievalService;
     private final Reranker reranker;
-    private final VectorSearchRepository vectorSearchRepository;
+    private final ChunkNeighborService chunkNeighborService;
     private final int retrievalTopK;
     private final int rerankedLimit;
     private final int parentChildSeedLimit;
@@ -32,14 +32,14 @@ class AdvisorRetriever {
     AdvisorRetriever(
             HybridRetrievalService hybridRetrievalService,
             Reranker reranker,
-            VectorSearchRepository vectorSearchRepository,
+            ChunkNeighborService chunkNeighborService,
             @Value("${app.advisor.retrieval-top-k:30}") int retrievalTopK,
             @Value("${app.advisor.reranked-limit:16}") int rerankedLimit,
             @Value("${app.advisor.parent-child-seed-limit:6}") int parentChildSeedLimit
     ) {
         this.hybridRetrievalService = hybridRetrievalService;
         this.reranker = reranker;
-        this.vectorSearchRepository = vectorSearchRepository;
+        this.chunkNeighborService = chunkNeighborService;
         this.retrievalTopK = Math.clamp(retrievalTopK, 5, 100);
         this.rerankedLimit = Math.clamp(rerankedLimit, 4, 50);
         this.parentChildSeedLimit = Math.clamp(parentChildSeedLimit, 0, 20);
@@ -76,7 +76,7 @@ class AdvisorRetriever {
 
     private List<RetrievedChunk> rerankWithNeighbors(String question, List<RetrievedChunk> retrieved) {
         var seeds = retrieved.stream().limit(parentChildSeedLimit).toList();
-        var neighbors = vectorSearchRepository.findActiveNeighbors(seeds);
+        var neighbors = chunkNeighborService.findActiveNeighbors(seeds);
         return reranker.rerank(question, mergeRetrieved(concat(retrieved, neighbors))).stream()
                 .limit(rerankedLimit)
                 .map(reranked -> reranked.toRetrievedChunk())

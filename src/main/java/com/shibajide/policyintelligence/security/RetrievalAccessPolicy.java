@@ -9,7 +9,7 @@ public class RetrievalAccessPolicy {
 
     private final boolean enforceHeaderScopes;
 
-    public RetrievalAccessPolicy(@Value("${app.security.enforce-header-scopes:false}") boolean enforceHeaderScopes) {
+    public RetrievalAccessPolicy(@Value("${app.security.enforce-header-scopes:true}") boolean enforceHeaderScopes) {
         this.enforceHeaderScopes = enforceHeaderScopes;
     }
 
@@ -41,8 +41,11 @@ public class RetrievalAccessPolicy {
     }
 
     private void requireAllowed(String field, String value, java.util.Set<String> allowedValues) {
-        if (value == null || allowedValues.isEmpty()) {
+        if (value == null) {
             return;
+        }
+        if (allowedValues.isEmpty()) {
+            throw new IllegalArgumentException("Access scope missing for " + field);
         }
         if (!allowedValues.contains(value)) {
             throw new IllegalArgumentException("Access denied for " + field + ": " + value);
