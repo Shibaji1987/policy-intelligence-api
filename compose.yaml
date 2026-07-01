@@ -46,6 +46,30 @@ services:
     volumes:
       - policy-ml-models:/models
 
+  reranker-service:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    command:
+      - "--model-id"
+      - "${RERANKER_MODEL:-BAAI/bge-reranker-base}"
+    environment:
+      MODEL_ID: ${RERANKER_MODEL:-BAAI/bge-reranker-base}
+    ports:
+      - "8091:80"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:80/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 300s
+    volumes:
+      - policy-reranker-models:/data
+
   api:
     build:
       context: .
@@ -54,6 +78,8 @@ services:
       DB_USERNAME: policy
       DB_PASSWORD: policy
       ML_BASE_URL: http://ml-service:8090
+      RERANKER_BASE_URL: http://reranker-service:8091
+      RERANKER_ENABLED: ${RERANKER_ENABLED:-true}
       CORS_ALLOWED_ORIGINS: http://localhost:4200,http://127.0.0.1:4200
       EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-local}
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
@@ -78,6 +104,8 @@ services:
         condition: service_healthy
       ml-service:
         condition: service_healthy
+      reranker-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
       interval: 10s
@@ -96,3 +124,4 @@ services:
 volumes:
   policy-postgres-data:
   policy-ml-models:
+  policy-reranker-models:

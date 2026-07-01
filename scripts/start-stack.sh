@@ -16,8 +16,8 @@ if [ "${LLM_MODEL:-}" ]; then
 fi
 
 echo "Building and starting Policy Intelligence stack..."
-echo "1/4 Starting PostgreSQL and ML service..."
-docker compose up -d --build --wait postgres ml-service
+echo "1/4 Starting PostgreSQL, ML service, and BGE reranker..."
+docker compose up -d --build --wait postgres ml-service reranker-service
 
 echo "2/4 Starting API..."
 docker compose up -d --build --wait api
@@ -32,3 +32,4 @@ echo ""
 echo "Policy Intelligence UI:  http://localhost:4200"
 echo "Policy Intelligence API: http://localhost:8080"
 echo "ML service health:       http://localhost:8090/health"
+echo "BGE reranker health:     http://localhost:8091/health"

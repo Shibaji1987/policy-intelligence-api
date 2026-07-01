@@ -100,7 +100,8 @@ enterprise knowledge platform:
 - human feedback collection on retrieval traces
 - golden-question evaluation runner
 - ML service integration for retrieval-quality prediction
-- Dockerized API, UI, ML, and database
+- BGE cross-encoder reranker integration as a separate model-serving container
+- Dockerized API, UI, ML, reranker, and database
 - local secrets kept out of Git
 - startup, shutdown, restart, and logs scripts
 
@@ -122,7 +123,8 @@ Upload policy document
   -> search by semantic similarity using cosine distance plus keyword scoring
   -> plan multiple retrieval queries
   -> expand neighboring chunks for parent-child context
-  -> rerank and reduce top candidates into the best 5-8 chunks
+  -> rerank top candidates with BGE cross-encoder scoring
+  -> reduce candidates into the best 5-8 chunks
   -> call LLM for final answer
   -> save trace, sources, and retrieval quality
 ```
@@ -136,6 +138,11 @@ integration.
 The ML service is intentionally separate. Today it predicts whether retrieval
 quality looks good or bad based on retrieval features. Over time it can be
 trained on real feedback from `retrieval_trace` and `retrieval_feedback`.
+
+The reranker runs as a separate container, but it is not a custom repo. The
+stack uses Hugging Face Text Embeddings Inference to serve the existing
+`BAAI/bge-reranker-base` cross-encoder model and return candidate relevance
+scores to the Java advisor pipeline.
 
 ## Simple Architecture Flow
 
@@ -162,14 +169,15 @@ Advisor Pipeline
   | 9. Generate multiple retrieval queries
   | 10. Retrieve top matching chunks
   | 11. Expand neighbor chunks for broader source sections
-  | 12. Rerank, deduplicate, diversify, and budget retrieved chunks
-  | 13. Send selected text chunks to LLM
-  | 14. Verify source citation shape
-  | 15. Ask ML service to score retrieval quality
+  | 12. Rerank top candidates through the BGE reranker service
+  | 13. Deduplicate, diversify, and budget retrieved chunks
+  | 14. Send selected text chunks to LLM
+  | 15. Verify source citation shape
+  | 16. Ask ML service to score retrieval quality
   v
 Trace + Response
   |
-  | 16. Save trace, sources, similarity scores, ML label, and verification status
+  | 17. Save trace, sources, similarity scores, ML label, and verification status
   v
 UI displays answer, sources, chunks, and retrieval quality
 ```
@@ -188,6 +196,7 @@ The Docker stack runs:
 ```text
 postgres      PostgreSQL with PGVector extension
 ml-service    FastAPI ML service for retrieval quality scoring
+reranker      Hugging Face TEI serving BAAI/bge-reranker-base
 api           Spring Boot backend
 ui            Angular production build served by Nginx
 ```
@@ -515,6 +524,7 @@ The stack publishes:
 UI:       http://localhost:4200
 API:      http://localhost:8080
 ML:       http://localhost:8090
+Reranker: http://localhost:8091
 Postgres: localhost:5433
 Redis:    localhost:6379
 Swagger:  http://localhost:8080/swagger-ui/index.html
@@ -534,6 +544,7 @@ Expected status:
 ```text
 postgres     healthy
 ml-service   healthy
+reranker     healthy
 api          healthy
 ui           up
 ```
@@ -548,6 +559,12 @@ Check ML through the API:
 
 ```bash
 curl http://localhost:8080/api/v1/ml/health
+```
+
+Check the BGE reranker directly:
+
+```bash
+curl http://localhost:8091/health
 ```
 
 Check the UI-to-API proxy:
@@ -663,6 +680,7 @@ Restart one service:
 sh scripts/restart-service.sh api
 sh scripts/restart-service.sh ui
 sh scripts/restart-service.sh ml-service
+sh scripts/restart-service.sh reranker-service
 sh scripts/restart-service.sh postgres
 ```
 
@@ -672,6 +690,7 @@ Or use Docker Compose directly:
 docker compose restart api
 docker compose restart ui
 docker compose restart ml-service
+docker compose restart reranker-service
 docker compose restart postgres
 ```
 
@@ -681,12 +700,13 @@ Recreate one service after code/config changes:
 docker compose up -d --build api
 docker compose up -d --build ui
 docker compose up -d --build ml-service
+docker compose up -d --build reranker-service
 ```
 
 Rebuild after code changes:
 
 ```bash
-docker compose build api ui
+docker compose build api ui reranker-service
 sh scripts/start-stack.sh
 ```
 
